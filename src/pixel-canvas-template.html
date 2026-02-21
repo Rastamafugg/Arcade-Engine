@@ -1,14 +1,14 @@
-@@ -0,0 +1,657 @@
+@@ -0,0 +1,1101 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Pixel Canvas v2</title>
+<title>Pixel Canvas v3</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
-    background: #111;
+    background: #0a0a0f;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -26,262 +26,293 @@
     top: 8px;
     left: 8px;
     color: #0f0;
-    font: 10px monospace;
+    font: 10px/1.6 monospace;
     pointer-events: none;
     white-space: pre;
-    line-height: 1.5;
+    background: rgba(0,0,0,0.5);
+    padding: 4px 6px;
   }
 </style>
 </head>
 <body>
 <canvas id="screen"></canvas>
 <div id="debug"></div>
-
 <script>
 'use strict';
 
 // ============================================================
 // CONFIG
+// Screen = logical viewport in pixels.
+// World  = total map size in tiles (can exceed screen).
 // ============================================================
-const TILE_SIZE = 8;
-const COLS      = 20;
-const ROWS      = 18;
-const LOGICAL_W = COLS * TILE_SIZE;  // 160
-const LOGICAL_H = ROWS * TILE_SIZE;  // 144
+const TILE_SIZE  = 8;
+const COLS       = 20;              // screen width in tiles
+const ROWS       = 18;              // screen height in tiles
+const LOGICAL_W  = COLS * TILE_SIZE; // 160px
+const LOGICAL_H  = ROWS * TILE_SIZE; // 144px
+const WORLD_COLS = 40;              // world map width in tiles
+const WORLD_ROWS = 36;              // world map height in tiles
+const WORLD_W    = WORLD_COLS * TILE_SIZE; // 320px
+const WORLD_H    = WORLD_ROWS * TILE_SIZE; // 288px
 
 // ============================================================
-// SECTION 1: PALETTE SYSTEM
-//
-// All colors are defined once here. Sprites reference palette
-// indices (integers). Null always means transparent.
-//
-// Advantages over inline hex strings:
-//   - Swap the entire visual theme by editing this one array
-//   - Sprite data stays small (integers, not strings)
-//   - Palette swapping per-sprite is trivial (pass alt palette)
+// SECTION 1: PALETTE
 // ============================================================
 const PALETTE = [
-  /* 00 */ '#222034',  // background / void
-  /* 01 */ '#45283C',  // dark purple
-  /* 02 */ '#663931',  // dark red
-  /* 03 */ '#8F563B',  // brown
-  /* 04 */ '#DF7126',  // orange
-  /* 05 */ '#D9A066',  // tan
-  /* 06 */ '#EEC39A',  // light skin
-  /* 07 */ '#FBF236',  // yellow
-  /* 08 */ '#99E550',  // green
-  /* 09 */ '#6ABE30',  // dark green
-  /* 10 */ '#37946E',  // teal
-  /* 11 */ '#4B692F',  // olive
-  /* 12 */ '#524B24',  // dark olive
-  /* 13 */ '#323C39',  // dark slate
-  /* 14 */ '#3F3F74',  // indigo
-  /* 15 */ '#306082',  // steel blue
-  /* 16 */ '#5B6EE1',  // blue
-  /* 17 */ '#639BFF',  // light blue
-  /* 18 */ '#5FCDE4',  // sky
-  /* 19 */ '#CBDBFC',  // pale blue
-  /* 20 */ '#FFFFFF',  // white
-  /* 21 */ '#9BADB7',  // light gray
-  /* 22 */ '#847E87',  // mid gray
-  /* 23 */ '#696A6A',  // gray
-  /* 24 */ '#595652',  // dark gray
-  /* 25 */ '#76428A',  // violet
-  /* 26 */ '#AC3232',  // red
-  /* 27 */ '#D95763',  // pink-red
+  /* 00 */ '#222034', /* 01 */ '#45283C', /* 02 */ '#663931',
+  /* 03 */ '#8F563B', /* 04 */ '#DF7126', /* 05 */ '#D9A066',
+  /* 06 */ '#EEC39A', /* 07 */ '#FBF236', /* 08 */ '#99E550',
+  /* 09 */ '#6ABE30', /* 10 */ '#37946E', /* 11 */ '#4B692F',
+  /* 12 */ '#524B24', /* 13 */ '#323C39', /* 14 */ '#3F3F74',
+  /* 15 */ '#306082', /* 16 */ '#5B6EE1', /* 17 */ '#639BFF',
+  /* 18 */ '#5FCDE4', /* 19 */ '#CBDBFC', /* 20 */ '#FFFFFF',
+  /* 21 */ '#9BADB7', /* 22 */ '#847E87', /* 23 */ '#696A6A',
+  /* 24 */ '#595652', /* 25 */ '#76428A', /* 26 */ '#AC3232',
+  /* 27 */ '#D95763', /* 28 */ '#4a3020', /* 29 */ '#2a1a10',
 ];
 
-// Pre-convert palette to RGBA Uint8 tuples for fast framebuffer writes.
-// Format: paletteRGBA[i] = [r, g, b, 255]
 const paletteRGBA = PALETTE.map(hex => {
-  const n = parseInt(hex.replace('#', ''), 16);
+  const n = parseInt(hex.slice(1), 16);
   return [(n >> 16) & 0xFF, (n >> 8) & 0xFF, n & 0xFF, 255];
 });
 
 // ============================================================
-// SECTION 2: SPRITE DEFINITIONS
-//
-// Sprites are 8x8 = 64-element flat arrays.
-// Values are palette indices (integers) or null (transparent).
-// Row-major: index = row * 8 + col
+// SECTION 2: SPRITES
+// 8x8 flat arrays. Values = palette indices | null (transparent).
 // ============================================================
 const SPRITES = {
 
-  // Smiley face — uses palette indices
-  smiley: [
-     null,  7,  7,  7,  7,  7,  7, null,
-        7,  7,  7,  7,  7,  7,  7,  7,
-        7, 24,  7,  7,  7,  7, 24,  7,
-        7,  7,  7,  7,  7,  7,  7,  7,
-        7,  7,  7,  7,  7,  7,  7,  7,
-        7, 24,  7,  7,  7,  7, 24,  7,
-        7,  7, 24, 24, 24, 24,  7,  7,
-     null,  7,  7,  7,  7,  7,  7, null,
-  ],
-
-  // Tree
-  tree: [
-     null, null,  8, null, null,  8, null, null,
-     null,  8,  8,  8,  8,  8,  8, null,
-        8,  8,  8,  9,  9,  8,  8,  8,
-     null,  8,  9,  8,  8,  9,  8, null,
-     null, null,  8,  8,  8,  8, null, null,
-     null, null, null,  3, null, null, null, null,
-     null, null, null,  3, null, null, null, null,
-     null, null, null, null, null, null, null, null,
-  ],
-
-  // Grass tile
+  // ---- Terrain ----
   grass: [
-        9,  9,  8,  9,  9,  9,  8,  9,
-        8,  9,  9,  9,  8,  9,  9,  8,
-        9,  9,  8,  9,  9,  8,  9,  9,
-       11, 11, 11,  9, 11, 11, 11, 11,
-       11, 11, 11, 11, 11, 11, 11, 11,
-       12, 11, 11, 11, 12, 11, 11, 12,
-       11, 11, 12, 11, 11, 11, 12, 11,
-       11, 12, 11, 11, 11, 12, 11, 11,
+     9, 9, 8, 9, 9, 9, 8, 9,
+     8, 9, 9, 9, 8, 9, 9, 8,
+     9, 9, 8, 9, 9, 8, 9, 9,
+    11,11,11, 9,11,11,11,11,
+    11,11,11,11,11,11,11,11,
+    12,11,11,11,12,11,11,12,
+    11,11,12,11,11,11,12,11,
+    11,12,11,11,11,12,11,11,
   ],
 
-  // Water tile (animatable — see tileAnimations)
-  water0: [
-       18, 17, 18, 18, 18, 17, 18, 18,
-       18, 18, 17, 18, 18, 18, 17, 18,
-       15, 18, 18, 18, 15, 18, 18, 18,
-       18, 15, 18, 18, 18, 15, 18, 18,
-       18, 18, 18, 15, 18, 18, 18, 15,
-       18, 18, 15, 18, 18, 18, 15, 18,
-       17, 18, 18, 18, 17, 18, 18, 18,
-       18, 17, 18, 18, 18, 17, 18, 18,
-  ],
-  water1: [
-       18, 18, 17, 18, 18, 18, 17, 18,
-       17, 18, 18, 18, 17, 18, 18, 18,
-       18, 18, 18, 15, 18, 18, 18, 15,
-       18, 18, 15, 18, 18, 18, 15, 18,
-       15, 18, 18, 18, 15, 18, 18, 18,
-       18, 15, 18, 18, 18, 15, 18, 18,
-       18, 18, 18, 17, 18, 18, 18, 17,
-       18, 18, 17, 18, 18, 18, 17, 18,
-  ],
-
-  // Stone path tile
   stone: [
-       22, 21, 22, 22, 22, 22, 21, 22,
-       21, 22, 22, 22, 21, 22, 22, 22,
-       22, 22, 22, 21, 22, 22, 22, 21,
-       23, 23, 23, 23, 23, 23, 23, 23,
-       22, 22, 22, 23, 22, 22, 22, 23,
-       22, 23, 22, 22, 22, 23, 22, 22,
-       23, 22, 22, 22, 23, 22, 22, 22,
-       22, 22, 23, 22, 22, 22, 23, 22,
+    22,21,22,22,22,22,21,22,
+    21,22,22,22,21,22,22,22,
+    22,22,22,21,22,22,22,21,
+    23,23,23,23,23,23,23,23,
+    22,22,22,23,22,22,22,23,
+    22,23,22,22,22,23,22,22,
+    23,22,22,22,23,22,22,22,
+    22,22,23,22,22,22,23,22,
   ],
 
-  // Player character (facing down)
-  player: [
-     null, null,  6,  6,  6,  6, null, null,
-     null,  6, 24,  6,  6, 24,  6, null,
-     null,  6,  6,  6,  6,  6,  6, null,
-     null, 16, 16, 16, 16, 16, 16, null,
-       16, 16,  5, 16, 16,  5, 16, 16,
-     null, 16,  5,  5,  5,  5, 16, null,
-     null,  5, null, null, null, null,  5, null,
-     null,  5, null, null, null, null,  5, null,
+  wall: [
+    24,24,28,24,24,24,28,24,
+    28,29,29,29,29,29,29,28,
+    24,29,24,24,24,24,29,24,
+    24,29,24,24,24,24,29,24,
+    28,29,29,29,29,29,29,28,
+    24,29,24,24,24,24,29,24,
+    24,29,24,24,24,24,29,24,
+    28,29,29,29,29,29,29,28,
+  ],
+
+  water0: [
+    18,17,18,18,18,17,18,18,
+    18,18,17,18,18,18,17,18,
+    15,18,18,18,15,18,18,18,
+    18,15,18,18,18,15,18,18,
+    18,18,18,15,18,18,18,15,
+    18,18,15,18,18,18,15,18,
+    17,18,18,18,17,18,18,18,
+    18,17,18,18,18,17,18,18,
+  ],
+
+  water1: [
+    18,18,17,18,18,18,17,18,
+    17,18,18,18,17,18,18,18,
+    18,18,18,15,18,18,18,15,
+    18,18,15,18,18,18,15,18,
+    15,18,18,18,15,18,18,18,
+    18,15,18,18,18,15,18,18,
+    18,18,18,17,18,18,18,17,
+    18,18,17,18,18,18,17,18,
+  ],
+
+  // ---- Decoration ----
+  tree: [
+    null,null, 8,null,null, 8,null,null,
+    null, 8,   8,  8,  8,  8,  8,null,
+       8,  8,  8,  9,  9,  8,  8,  8,
+    null, 8,   9,  8,  8,  9,  8,null,
+    null,null, 8,  8,  8,  8,null,null,
+    null,null,null, 3,null,null,null,null,
+    null,null,null, 3,null,null,null,null,
+    null,null,null,null,null,null,null,null,
+  ],
+
+  flower: [
+    null,null,null, 7,null,null,null,null,
+    null,null, 7,  7,  7,null,null,null,
+    null,null,null, 7,null,null,null,null,
+    null, 8, null,null,null, 7,null,null,
+       8, 9,  8,null,null, 7, 7,null,
+    null, 8, null,null,null, 7,null,null,
+    null,null,null,null,null,null,null,null,
+    null,null,null,null,null,null,null,null,
+  ],
+
+  // ---- NPCs ----
+  npc_a: [
+    null,null,  7,  7,  7,  7,null,null,
+    null,  7, 24,  7,  7, 24,  7,null,
+    null,  7,  7,  7,  7,  7,  7,null,
+    null,  4,  4,  4,  4,  4,  4,null,
+       4,  4,  5,  4,  4,  5,  4,  4,
+    null,  4,  5,  5,  5,  5,  4,null,
+    null,  5,null,null,null,null,  5,null,
+    null,  5,null,null,null,null,  5,null,
+  ],
+
+  npc_b: [
+    null,null,  5,  5,  5,  5,null,null,
+    null,  5, 13,  5,  5, 13,  5,null,
+    null,  5,  5,  5,  5,  5,  5,null,
+    null, 27, 27, 27, 27, 27, 27,null,
+      27, 27,  6, 27, 27,  6, 27, 27,
+    null, 27,  6,  6,  6,  6, 27,null,
+    null,  6,null,null,null,null,  6,null,
+    null,  6,null,null,null,null,  6,null,
+  ],
+
+  // ---- Player walking frames (down) ----
+  // Frame 0: left foot forward
+  player_d0: [
+    null,null,  6,  6,  6,  6,null,null,
+    null,  6, 24,  6,  6, 24,  6,null,
+    null,  6,  6,  6,  6,  6,  6,null,
+    null, 16, 16, 16, 16, 16, 16,null,
+      16, 16,  5, 16, 16,  5, 16, 16,
+    null, 16,  5,  5,  5,  5, 16,null,
+    null,  5,  5,null,null,  5,null,null,
+    null,null,  5,null,null,null,null,null,
+  ],
+  // Frame 1: right foot forward
+  player_d1: [
+    null,null,  6,  6,  6,  6,null,null,
+    null,  6, 24,  6,  6, 24,  6,null,
+    null,  6,  6,  6,  6,  6,  6,null,
+    null, 16, 16, 16, 16, 16, 16,null,
+      16, 16,  5, 16, 16,  5, 16, 16,
+    null, 16,  5,  5,  5,  5, 16,null,
+    null, null,null,null,  5,  5,null,null,
+    null,null,null,null,null,  5,null,null,
+  ],
+  // Idle (standing)
+  player_idle: [
+    null,null,  6,  6,  6,  6,null,null,
+    null,  6, 24,  6,  6, 24,  6,null,
+    null,  6,  6,  6,  6,  6,  6,null,
+    null, 16, 16, 16, 16, 16, 16,null,
+      16, 16,  5, 16, 16,  5, 16, 16,
+    null, 16,  5,  5,  5,  5, 16,null,
+    null,  5,null,null,null,null,  5,null,
+    null,  5,null,null,null,null,  5,null,
+  ],
+  // Up-facing
+  player_u0: [
+    null,null,  6,  6,  6,  6,null,null,
+    null,  6,  6, 24, 24,  6,  6,null,
+    null,  6,  6,  6,  6,  6,  6,null,
+    null, 16, 16, 16, 16, 16, 16,null,
+      16, 16,  5, 16, 16,  5, 16, 16,
+    null, 16,  5,  5,  5,  5, 16,null,
+    null,  5,  5,null,null,  5,null,null,
+    null,null,  5,null,null,null,null,null,
+  ],
+  player_u1: [
+    null,null,  6,  6,  6,  6,null,null,
+    null,  6,  6, 24, 24,  6,  6,null,
+    null,  6,  6,  6,  6,  6,  6,null,
+    null, 16, 16, 16, 16, 16, 16,null,
+      16, 16,  5, 16, 16,  5, 16, 16,
+    null, 16,  5,  5,  5,  5, 16,null,
+    null,null,null,null,  5,  5,null,null,
+    null,null,null,null,null,  5,null,null,
+  ],
+  // Side-facing (left; flip for right)
+  player_s0: [
+    null,null,  6,  6,  6,null,null,null,
+    null,  6, 24,  6,  6,  6,null,null,
+    null,  6,  6,  6,  6,  6,null,null,
+    null, 16, 16, 16, 16, 16, 16,null,
+    null, 16,  5, 16, 16,  5, 16,null,
+    null, 16,  5,  5,  5,  5,null,null,
+    null,  5,  5,null,  5,null,null,null,
+    null,null,  5,null,null,null,null,null,
+  ],
+  player_s1: [
+    null,null,  6,  6,  6,null,null,null,
+    null,  6, 24,  6,  6,  6,null,null,
+    null,  6,  6,  6,  6,  6,null,null,
+    null, 16, 16, 16, 16, 16, 16,null,
+    null, 16,  5, 16, 16,  5, 16,null,
+    null, 16,  5,  5,  5,  5,null,null,
+    null,null,null,  5,  5, null,null,null,
+    null,null,null,null,  5,null,null,null,
   ],
 };
 
 // ============================================================
-// SECTION 3: SPRITE CACHE — pre-rasterize to RGBA buffers
-//
-// Each sprite is converted once from palette indices to a flat
-// Uint8ClampedArray of [r,g,b,a, r,g,b,a ...] pixel data.
-// This eliminates palette lookups during every blit call.
+// SECTION 3: SPRITE CACHE — rasterize palette indices → RGBA
 // ============================================================
 const spriteCache = {};
 
 function buildSpriteCache() {
   for (const [name, data] of Object.entries(SPRITES)) {
-    const buf = new Uint8ClampedArray(TILE_SIZE * TILE_SIZE * 4);
+    const buf = new Uint8ClampedArray(64 * 4);
     for (let i = 0; i < 64; i++) {
-      const idx = data[i];
+      const idx  = data[i];
       const base = i * 4;
-      if (idx === null) {
-        buf[base + 3] = 0; // fully transparent
-      } else {
-        const rgba = paletteRGBA[idx];
-        buf[base]     = rgba[0];
-        buf[base + 1] = rgba[1];
-        buf[base + 2] = rgba[2];
-        buf[base + 3] = 255;
-      }
+      if (idx === null) { buf[base + 3] = 0; continue; }
+      const rgba = paletteRGBA[idx];
+      buf[base] = rgba[0]; buf[base+1] = rgba[1];
+      buf[base+2] = rgba[2]; buf[base+3] = 255;
     }
     spriteCache[name] = buf;
   }
 }
-
 buildSpriteCache();
 
-// Rebuild cache with an alternative palette (palette swap)
-// altPalette: array of the same length as PALETTE, or a sparse
-// object { originalIndex: newIndex }
-function buildPaletteSwappedSprite(spriteName, indexMap) {
+function buildPaletteSwap(spriteName, indexMap) {
   const data = SPRITES[spriteName];
   if (!data) return null;
-  const buf = new Uint8ClampedArray(TILE_SIZE * TILE_SIZE * 4);
+  const buf = new Uint8ClampedArray(64 * 4);
   for (let i = 0; i < 64; i++) {
-    const raw = data[i];
-    const idx = (raw !== null && indexMap[raw] !== undefined) ? indexMap[raw] : raw;
+    const raw  = data[i];
+    const idx  = (raw !== null && indexMap[raw] !== undefined) ? indexMap[raw] : raw;
     const base = i * 4;
-    if (idx === null || raw === null) {
-      buf[base + 3] = 0;
-    } else {
-      const rgba = paletteRGBA[idx];
-      buf[base]     = rgba[0];
-      buf[base + 1] = rgba[1];
-      buf[base + 2] = rgba[2];
-      buf[base + 3] = 255;
-    }
+    if (raw === null || idx === null) { buf[base+3] = 0; continue; }
+    const rgba = paletteRGBA[idx];
+    buf[base] = rgba[0]; buf[base+1] = rgba[1];
+    buf[base+2] = rgba[2]; buf[base+3] = 255;
   }
   return buf;
 }
 
 // ============================================================
-// SECTION 4: CANVAS & FRAMEBUFFER SETUP
-//
-// Performance model:
-//   - One Uint8ClampedArray framebuffer (LOGICAL_W * LOGICAL_H * 4)
-//   - All drawing writes into this buffer directly (no ctx calls)
-//   - One putImageData call per frame to flush the buffer
-//
-// Why ImageData is faster than fillRect per pixel:
-//   - fillRect: JS call overhead per pixel, state machine in browser
-//     rendering engine per call — O(n) draw calls for n pixels
-//   - ImageData: one putImageData uploads the entire framebuffer in
-//     a single operation; all pixel writes are typed array assignments
-//     (fast, no call overhead per pixel)
-//
-// Tradeoffs of ImageData approach:
-//   PRO: Dramatically faster for dense pixel operations (many sprites)
-//   PRO: Enables custom blending, masking, scanline effects directly
-//   PRO: Single GPU texture upload per frame regardless of scene complexity
-//   CON: No hardware-accelerated transforms (rotation, scaling per-sprite)
-//   CON: Transparency requires manual alpha compositing (see blitSprite)
-//   CON: Cannot leverage GPU compositing (ctx.globalAlpha etc) per draw call
-//   CON: Slightly more complex code
+// SECTION 4: CANVAS / FRAMEBUFFER
 // ============================================================
 const canvas = document.getElementById('screen');
 const ctx    = canvas.getContext('2d');
-
 canvas.width  = LOGICAL_W;
 canvas.height = LOGICAL_H;
 ctx.imageSmoothingEnabled = false;
 
-// Single framebuffer — reused every frame
 const frameImageData = ctx.createImageData(LOGICAL_W, LOGICAL_H);
-const frameBuffer    = frameImageData.data; // Uint8ClampedArray
+const frameBuffer    = frameImageData.data;
 
 function fitToWindow() {
-  const scale  = Math.min(window.innerWidth / LOGICAL_W, window.innerHeight / LOGICAL_H);
+  const scale = Math.min(window.innerWidth / LOGICAL_W, window.innerHeight / LOGICAL_H);
   canvas.style.width  = Math.round(LOGICAL_W * scale) + 'px';
   canvas.style.height = Math.round(LOGICAL_H * scale) + 'px';
 }
@@ -289,365 +320,778 @@ window.addEventListener('resize', fitToWindow);
 fitToWindow();
 
 // ============================================================
-// SECTION 5: LOW-LEVEL DRAW API (writes to frameBuffer)
+// SECTION 5: LOW-LEVEL DRAW (framebuffer writes)
 // ============================================================
 
-// Fill the entire framebuffer with a palette color index
-function clearBuffer(paletteIndex = 0) {
-  const [r, g, b] = paletteRGBA[paletteIndex];
+function clearBuffer(palIdx = 0) {
+  const [r, g, b] = paletteRGBA[palIdx];
   for (let i = 0; i < frameBuffer.length; i += 4) {
-    frameBuffer[i]     = r;
-    frameBuffer[i + 1] = g;
-    frameBuffer[i + 2] = b;
-    frameBuffer[i + 3] = 255;
+    frameBuffer[i] = r; frameBuffer[i+1] = g;
+    frameBuffer[i+2] = b; frameBuffer[i+3] = 255;
   }
 }
 
-// Blit a pre-built RGBA buffer (64 pixels) to framebuffer at pixel (px, py)
-// Handles transparency (alpha = 0 pixels are skipped)
-function blitBuffer(rgbaBuf, px, py, flipX = false, flipY = false) {
+// Blit one 8x8 RGBA buffer to screen-space pixel position (sx, sy).
+// sx/sy are already viewport-relative (world pos minus camera offset).
+// Pixels that fall outside [0, LOGICAL_W) x [0, LOGICAL_H) are clipped.
+function blitBuffer(buf, sx, sy, flipX = false, flipY = false) {
   for (let row = 0; row < TILE_SIZE; row++) {
+    const dstY = sy + row;
+    if (dstY < 0 || dstY >= LOGICAL_H) continue;
     const srcRow = flipY ? TILE_SIZE - 1 - row : row;
-    const destY  = py + row;
-    if (destY < 0 || destY >= LOGICAL_H) continue;
 
     for (let col = 0; col < TILE_SIZE; col++) {
+      const dstX = sx + col;
+      if (dstX < 0 || dstX >= LOGICAL_W) continue;
       const srcCol = flipX ? TILE_SIZE - 1 - col : col;
-      const destX  = px + col;
-      if (destX < 0 || destX >= LOGICAL_W) continue;
 
-      const srcBase  = (srcRow * TILE_SIZE + srcCol) * 4;
-      const srcAlpha = rgbaBuf[srcBase + 3];
-      if (srcAlpha === 0) continue; // transparent — skip
+      const srcBase = (srcRow * TILE_SIZE + srcCol) * 4;
+      if (buf[srcBase + 3] === 0) continue;
 
-      const destBase = (destY * LOGICAL_W + destX) * 4;
-      if (srcAlpha === 255) {
-        // Fully opaque — direct copy (fastest path)
-        frameBuffer[destBase]     = rgbaBuf[srcBase];
-        frameBuffer[destBase + 1] = rgbaBuf[srcBase + 1];
-        frameBuffer[destBase + 2] = rgbaBuf[srcBase + 2];
-        frameBuffer[destBase + 3] = 255;
-      } else {
-        // Semi-transparent — alpha blend
-        const a   = srcAlpha / 255;
-        const ia  = 1 - a;
-        frameBuffer[destBase]     = (rgbaBuf[srcBase]     * a + frameBuffer[destBase]     * ia) | 0;
-        frameBuffer[destBase + 1] = (rgbaBuf[srcBase + 1] * a + frameBuffer[destBase + 1] * ia) | 0;
-        frameBuffer[destBase + 2] = (rgbaBuf[srcBase + 2] * a + frameBuffer[destBase + 2] * ia) | 0;
-        frameBuffer[destBase + 3] = 255;
-      }
+      const dstBase = (dstY * LOGICAL_W + dstX) * 4;
+      frameBuffer[dstBase]   = buf[srcBase];
+      frameBuffer[dstBase+1] = buf[srcBase+1];
+      frameBuffer[dstBase+2] = buf[srcBase+2];
+      frameBuffer[dstBase+3] = 255;
     }
   }
 }
 
-// Blit a named sprite to pixel coordinates (px, py)
-function blitSprite(name, px, py, flipX = false, flipY = false, swappedBuf = null) {
-  const buf = swappedBuf || spriteCache[name];
-  if (!buf) { console.warn(`Sprite not found: ${name}`); return; }
-  blitBuffer(buf, px, py, flipX, flipY);
-}
-
-// Blit a named sprite at tile coordinates (tx, ty)
-function blitSpriteTile(name, tx, ty, flipX = false, flipY = false, swappedBuf = null) {
-  blitSprite(name, tx * TILE_SIZE, ty * TILE_SIZE, flipX, flipY, swappedBuf);
-}
-
-// Fill a rectangle in the framebuffer with a palette color index
-function fillRect(px, py, w, h, paletteIndex) {
-  const [r, g, b] = paletteRGBA[paletteIndex];
-  for (let row = Math.max(0, py); row < Math.min(LOGICAL_H, py + h); row++) {
-    for (let col = Math.max(0, px); col < Math.min(LOGICAL_W, px + w); col++) {
-      const base = (row * LOGICAL_W + col) * 4;
-      frameBuffer[base]     = r;
-      frameBuffer[base + 1] = g;
-      frameBuffer[base + 2] = b;
-      frameBuffer[base + 3] = 255;
+function fillRectPx(px, py, w, h, palIdx) {
+  const [r, g, b] = paletteRGBA[palIdx];
+  const x0 = Math.max(0, px), x1 = Math.min(LOGICAL_W, px + w);
+  const y0 = Math.max(0, py), y1 = Math.min(LOGICAL_H, py + h);
+  for (let y = y0; y < y1; y++) {
+    for (let x = x0; x < x1; x++) {
+      const base = (y * LOGICAL_W + x) * 4;
+      frameBuffer[base] = r; frameBuffer[base+1] = g;
+      frameBuffer[base+2] = b; frameBuffer[base+3] = 255;
     }
   }
 }
 
-// Flush framebuffer to canvas — call once per frame after all drawing
 function flushBuffer() {
   ctx.putImageData(frameImageData, 0, 0);
 }
 
 // ============================================================
-// SECTION 6: TILEMAP LAYER SYSTEM
+// SECTION 6: CAMERA / VIEWPORT
 //
-// A tilemap layer is a 2D array [ROWS][COLS] of sprite names.
-// Null cells are skipped (transparent / no tile).
-// Multiple layers can be stacked: background → midground → foreground.
+// The camera holds a world-space position (camera.x, camera.y)
+// representing the TOP-LEFT pixel of the viewport in world space.
 //
-// Animated tiles: tileAnimations maps a base sprite name to an array
-// of sprite names that cycle at a defined frame rate.
+// Converting world → screen:
+//   screenX = worldX - camera.x
+//   screenY = worldY - camera.y
+//
+// CULLING:
+//   An object at world position (wx, wy) with size (w, h) is
+//   culled (skipped entirely) when its world rect does not
+//   intersect the camera viewport rect.
+//
+//   Viewport rect (world space):
+//     left   = camera.x
+//     top    = camera.y
+//     right  = camera.x + LOGICAL_W
+//     bottom = camera.y + LOGICAL_H
+//
+//   Object is visible when:
+//     wx + w > camera.x   (right edge past viewport left)
+//     wx     < camera.x + LOGICAL_W  (left edge before viewport right)
+//     wy + h > camera.y
+//     wy     < camera.y + LOGICAL_H
+//
+//   Culling cost: two comparisons per object. For tilemaps the
+//   tile loop start/end indices are computed directly from camera
+//   bounds — no per-tile check needed (see drawTilemap).
+//
+// camera.follow(worldX, worldY):
+//   Centers the viewport on a world point, then clamps so the
+//   camera never shows outside the world boundary.
 // ============================================================
+const camera = {
+  x: 0,  // world-space left edge of viewport
+  y: 0,
 
-// Tile animation definitions: name → { frames[], fps }
-const TILE_ANIMATIONS = {
-  water: { frames: ['water0', 'water1'], fps: 2 },
+  // Center on a world pixel point, clamp to world bounds.
+  follow(wx, wy) {
+    this.x = Math.round(Math.max(0, Math.min(WORLD_W - LOGICAL_W, wx - LOGICAL_W / 2)));
+    this.y = Math.round(Math.max(0, Math.min(WORLD_H - LOGICAL_H, wy - LOGICAL_H / 2)));
+  },
+
+  // World → screen
+  toScreen(wx, wy) {
+    return [wx - this.x, wy - this.y];
+  },
+
+  // True if an 8x8 tile at world pixel (wx, wy) is visible.
+  isVisible(wx, wy, w = TILE_SIZE, h = TILE_SIZE) {
+    return wx + w > this.x &&
+           wx     < this.x + LOGICAL_W &&
+           wy + h > this.y &&
+           wy     < this.y + LOGICAL_H;
+  },
 };
 
-// Pre-resolve animation frame for a sprite name given elapsed time
-function resolveSpriteName(name, elapsed) {
+// ============================================================
+// SECTION 7: TILEMAP SYSTEM
+//
+// Three map layers stacked in draw order:
+//   LAYER_BG       — terrain (all cells filled; no culling needed beyond tile bounds)
+//   LAYER_OBJECTS  — decor sprites (trees, flowers; transparent tiles = null)
+//   LAYER_COLLISION— boolean array; true = solid tile
+//
+// drawTilemap computes the visible tile range directly from
+// camera position, avoiding any per-tile visibility test:
+//   firstCol = floor(camera.x / TILE_SIZE)
+//   lastCol  = ceil((camera.x + LOGICAL_W) / TILE_SIZE)
+//   (same for rows)
+// Only tiles within that range are iterated — O(screen tiles),
+// not O(world tiles). For a 40x36 world vs 20x18 screen this
+// halves iteration vs a naive full-world loop.
+// ============================================================
+
+const TILE_ANIMATIONS = {
+  water: { frames: ['water0','water1'], fps: 2 },
+};
+
+function resolveSprite(name, elapsed) {
   const anim = TILE_ANIMATIONS[name];
   if (!anim) return name;
-  const frameIndex = Math.floor(elapsed * anim.fps) % anim.frames.length;
-  return anim.frames[frameIndex];
+  return anim.frames[Math.floor(elapsed * anim.fps) % anim.frames.length];
 }
 
-// Draw an entire tilemap layer in one call
-// layer: 2D array [row][col] of sprite names (or null)
-// elapsed: total elapsed time in seconds (for animation)
 function drawTilemap(layer, elapsed = 0) {
-  for (let row = 0; row < layer.length; row++) {
-    for (let col = 0; col < layer[row].length; col++) {
-      const cell = layer[row][col];
-      if (cell === null) continue;
-      const resolved = resolveSpriteName(cell, elapsed);
-      blitSpriteTile(resolved, col, row);
+  const colStart = Math.max(0, Math.floor(camera.x / TILE_SIZE));
+  const colEnd   = Math.min(WORLD_COLS, Math.ceil((camera.x + LOGICAL_W) / TILE_SIZE));
+  const rowStart = Math.max(0, Math.floor(camera.y / TILE_SIZE));
+  const rowEnd   = Math.min(WORLD_ROWS, Math.ceil((camera.y + LOGICAL_H) / TILE_SIZE));
+
+  for (let row = rowStart; row < rowEnd; row++) {
+    for (let col = colStart; col < colEnd; col++) {
+      const cell = layer[row] ? layer[row][col] : null;
+      if (!cell) continue;
+      const name = resolveSprite(cell, elapsed);
+      const buf  = spriteCache[name];
+      if (!buf) continue;
+      const [sx, sy] = camera.toScreen(col * TILE_SIZE, row * TILE_SIZE);
+      blitBuffer(buf, sx, sy);
     }
   }
 }
 
 // ============================================================
-// EXAMPLE TILEMAP DATA
-// ============================================================
-// BG layer: fills the entire screen
-const LAYER_BG = [
-  ['grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass'],
-  ['grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass'],
-  ['grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass'],
-  ['grass','grass','grass','water','water','water','water','water','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass'],
-  ['grass','grass','grass','water','water','water','water','water','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass'],
-  ['grass','grass','grass','water','water','water','water','water','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass'],
-  ['grass','grass','grass','grass','stone','stone','stone','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass'],
-  ['grass','grass','grass','grass','stone','stone','stone','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass'],
-  ['grass','grass','grass','grass','stone','stone','stone','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass'],
-  ['grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass'],
-  ['grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass'],
-  ['grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass'],
-  ['grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass'],
-  ['grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass'],
-  ['grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass'],
-  ['grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass'],
-  ['grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass'],
-  ['grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass'],
-];
-
-// Object layer: sparse — only defined cells are non-null
-const LAYER_OBJECTS = [
-  [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],
-  [null,null,'tree',null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],
-  [null,null,null,null,null,null,null,null,null,null,null,null,'tree',null,null,null,null,null,null,null],
-  [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],
-  [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],
-  [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],
-  [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],
-  [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],
-  [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],
-  [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],
-  [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],
-  [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],
-  [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],
-  [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],
-  [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],
-  [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],
-  [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],
-  [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],
-];
-
-// ============================================================
-// SECTION 7: INPUT HANDLER
+// SECTION 8: COLLISION LAYER & AABB RESOLUTION
 //
-// Architecture: event listeners maintain a raw key/button state.
-// Each frame, the game loop calls input.update() to snapshot
-// current state and compute edge-triggered (pressed/released) flags.
-// Gamepad is polled via navigator.getGamepads() in update().
+// LAYER_COLLISION: 2D boolean array — true = solid.
+// Solid tiles block the player's hitbox.
 //
-// Actions are abstract — mapped from physical keys/buttons.
-// Game logic references actions, not raw keys, so remapping
-// requires only editing the ACTION_MAP.
+// AABB resolution (axis-separated):
+//   Given current position and desired new position:
+//   1. Move only on X. Test all four corners of the hitbox at
+//      the new X position against solid tiles. If any corner
+//      is in a solid tile, cancel X movement.
+//   2. Move only on Y. Same test. Cancel Y if blocked.
+//   Separating axes prevents the player from sticking at
+//   diagonal wall junctions.
+//
+// Player hitbox: 6x6 px, offset (1, 2) from sprite top-left.
+// This is smaller than the 8x8 sprite to allow slight tile overlap
+// for visual comfort (feet under grass edges etc).
+//
+// isSolid(tx, ty): checks the collision map.
+// collidesAt(worldX, worldY): tests all four hitbox corners.
+// resolveMove(entity, dx, dy): returns new {x,y} after resolution.
 // ============================================================
 
+// True if tile (tx, ty) in world coordinates is solid.
+function isSolid(tx, ty) {
+  if (tx < 0 || ty < 0 || tx >= WORLD_COLS || ty >= WORLD_ROWS) return true;
+  return !!(LAYER_COLLISION[ty] && LAYER_COLLISION[ty][tx]);
+}
+
+// Hitbox constants (relative to entity's world-space top-left).
+const HB_OFFSET_X = 1;  // hitbox left edge from sprite left
+const HB_OFFSET_Y = 4;  // hitbox top edge from sprite top (feet area)
+const HB_W        = 6;  // hitbox width
+const HB_H        = 4;  // hitbox height
+
+// Test all four hitbox corners at a given world position.
+function collidesAt(wx, wy) {
+  const x0 = wx + HB_OFFSET_X;
+  const y0 = wy + HB_OFFSET_Y;
+  const x1 = x0 + HB_W - 1;
+  const y1 = y0 + HB_H - 1;
+
+  return isSolid(Math.floor(x0 / TILE_SIZE), Math.floor(y0 / TILE_SIZE)) ||
+         isSolid(Math.floor(x1 / TILE_SIZE), Math.floor(y0 / TILE_SIZE)) ||
+         isSolid(Math.floor(x0 / TILE_SIZE), Math.floor(y1 / TILE_SIZE)) ||
+         isSolid(Math.floor(x1 / TILE_SIZE), Math.floor(y1 / TILE_SIZE));
+}
+
+// Attempt move by (dx, dy) from (wx, wy). Resolve axis-by-axis.
+function resolveMove(wx, wy, dx, dy) {
+  let nx = wx + dx;
+  let ny = wy + dy;
+
+  // Clamp to world bounds first.
+  nx = Math.max(0, Math.min(WORLD_W - TILE_SIZE, nx));
+  ny = Math.max(0, Math.min(WORLD_H - TILE_SIZE, ny));
+
+  // Try X move.
+  if (!collidesAt(nx, wy)) {
+    wx = nx;
+  }
+  // Try Y move (from resolved X).
+  if (!collidesAt(wx, ny)) {
+    wy = ny;
+  }
+
+  return { x: wx, y: wy };
+}
+
+// ============================================================
+// SECTION 9: SPRITE ANIMATION SYSTEM
+//
+// An Animator component defines named animation clips.
+// Each clip: { frames: [spriteName,...], durations: [seconds,...] }
+// durations[i] = how long frame i is shown. Can be uniform or per-frame.
+//
+// Animator state: { current, frameIdx, timer, flipX, flipY }
+//
+// animatorUpdate(anim, delta): advances timer, wraps frame.
+// animatorSprite(anim): returns the current sprite name.
+//
+// Attaching to an entity: entity has a component 'animator'.
+// The AnimationSystem iterates all entities with [animator] and
+// calls animatorUpdate on each.
+// ============================================================
+
+function createAnimator(clips, initial = Object.keys(clips)[0]) {
+  return {
+    clips,
+    current:  initial,
+    frameIdx: 0,
+    timer:    0,
+    flipX:    false,
+    flipY:    false,
+  };
+}
+
+function animatorPlay(anim, clipName) {
+  if (anim.current === clipName) return;
+  anim.current  = clipName;
+  anim.frameIdx = 0;
+  anim.timer    = 0;
+}
+
+function animatorUpdate(anim, delta) {
+  const clip = anim.clips[anim.current];
+  if (!clip || clip.frames.length === 0) return;
+
+  anim.timer += delta;
+  const dur = Array.isArray(clip.durations)
+    ? (clip.durations[anim.frameIdx] ?? clip.durations[0])
+    : clip.durations;
+
+  if (anim.timer >= dur) {
+    anim.timer -= dur;
+    anim.frameIdx = (anim.frameIdx + 1) % clip.frames.length;
+  }
+}
+
+function animatorSprite(anim) {
+  const clip = anim.clips[anim.current];
+  if (!clip) return null;
+  return clip.frames[anim.frameIdx] || null;
+}
+
+// ============================================================
+// SECTION 10: ENTITY / COMPONENT SYSTEM (ECS)
+//
+// Architecture (minimalist but extensible):
+//
+// Entity   = a plain integer ID. No class, no methods.
+// Component= any plain object stored in a Map keyed by component name.
+//            Components are data only — no logic.
+// System   = a function that queries for entities with specific
+//            components and operates on them.
+//
+// World:
+//   createEntity(components)  → id
+//   destroyEntity(id)
+//   addComponent(id, name, data)
+//   getComponent(id, name)    → data | undefined
+//   hasComponent(id, name)    → bool
+//   query(...names)           → id[] of entities that have ALL names
+//
+// Systems are registered as functions and called in order each frame.
+// Each system receives (delta, elapsed) and calls world.query() internally.
+//
+// Why plain IDs + Maps instead of class instances per entity:
+//   - Components can be added/removed at runtime without restructuring
+//   - Systems operate on arbitrary entity sets — no inheritance coupling
+//   - Trivial serialization: components are plain objects
+//
+// Tradeoff vs class-per-entity:
+//   - No cache locality (Map lookups vs struct array)
+//   - More boilerplate for simple games
+//   - Justified when entity behavior is heterogeneous or data-driven
+// ============================================================
+const world = (() => {
+  let nextId = 0;
+  const components = new Map(); // id → { [componentName]: data }
+  const entities   = new Set();
+
+  return {
+    createEntity(comps = {}) {
+      const id = nextId++;
+      entities.add(id);
+      components.set(id, { ...comps });
+      return id;
+    },
+
+    destroyEntity(id) {
+      entities.delete(id);
+      components.delete(id);
+    },
+
+    addComponent(id, name, data) {
+      if (!components.has(id)) return;
+      components.get(id)[name] = data;
+    },
+
+    getComponent(id, name) {
+      return components.get(id)?.[name];
+    },
+
+    hasComponent(id, name) {
+      return !!(components.get(id)?.[name] !== undefined);
+    },
+
+    // Returns all entity IDs that have every listed component name.
+    query(...names) {
+      const result = [];
+      for (const id of entities) {
+        const comps = components.get(id);
+        if (names.every(n => comps[n] !== undefined)) result.push(id);
+      }
+      return result;
+    },
+
+    all: entities,
+  };
+})();
+
+// ============================================================
+// SECTION 11: SYSTEMS
+//
+// Each system is a function(delta, elapsed).
+// Called in order: Input → AI → Movement → Animation → Render.
+// ============================================================
+
+// --- InputSystem ---
+// Reads input snapshot, drives the player entity's velocity and animator.
+function InputSystem(delta) {
+  const ids = world.query('player', 'transform', 'velocity', 'animator');
+  for (const id of ids) {
+    const vel  = world.getComponent(id, 'velocity');
+    const anim = world.getComponent(id, 'animator');
+
+    let dx = 0, dy = 0;
+    const ax = input.axis();
+    if (input.held('left')  || ax.x < -0.15) dx = -1;
+    if (input.held('right') || ax.x >  0.15) dx =  1;
+    if (input.held('up')    || ax.y < -0.15) dy = -1;
+    if (input.held('down')  || ax.y >  0.15) dy =  1;
+
+    vel.dx = dx * vel.speed;
+    vel.dy = dy * vel.speed;
+
+    // Drive animator based on movement direction.
+    if (dx !== 0 || dy !== 0) {
+      if      (dy > 0)  { animatorPlay(anim, 'walk_down');  anim.flipX = false; }
+      else if (dy < 0)  { animatorPlay(anim, 'walk_up');    anim.flipX = false; }
+      else if (dx < 0)  { animatorPlay(anim, 'walk_side');  anim.flipX = true;  }
+      else if (dx > 0)  { animatorPlay(anim, 'walk_side');  anim.flipX = false; }
+    } else {
+      animatorPlay(anim, 'idle');
+    }
+  }
+}
+
+// --- AISystem ---
+// Simple patrol AI for NPC entities.
+// Each NPC has a 'patrol' component: { waypoints, waypointIdx, speed }
+function AISystem(delta) {
+  const ids = world.query('transform', 'velocity', 'patrol', 'animator');
+  for (const id of ids) {
+    const tf      = world.getComponent(id, 'transform');
+    const vel     = world.getComponent(id, 'velocity');
+    const patrol  = world.getComponent(id, 'patrol');
+    const anim    = world.getComponent(id, 'animator');
+
+    const target  = patrol.waypoints[patrol.waypointIdx];
+    const dx      = target.x - tf.x;
+    const dy      = target.y - tf.y;
+    const dist    = Math.sqrt(dx * dx + dy * dy);
+
+    if (dist < 2) {
+      patrol.waypointIdx = (patrol.waypointIdx + 1) % patrol.waypoints.length;
+      vel.dx = 0; vel.dy = 0;
+      animatorPlay(anim, 'idle');
+    } else {
+      vel.dx = (dx / dist) * patrol.speed;
+      vel.dy = (dy / dist) * patrol.speed;
+      if      (Math.abs(dy) > Math.abs(dx)) {
+        animatorPlay(anim, dy > 0 ? 'walk_down' : 'walk_up');
+      } else {
+        animatorPlay(anim, 'walk_side');
+        const a = world.getComponent(id, 'animator');
+        if (a) a.flipX = dx < 0;
+      }
+    }
+  }
+}
+
+// --- MovementSystem ---
+// Applies velocity with collision resolution for all collidable entities.
+function MovementSystem(delta) {
+  const ids = world.query('transform', 'velocity');
+  for (const id of ids) {
+    const tf  = world.getComponent(id, 'transform');
+    const vel = world.getComponent(id, 'velocity');
+
+    if (vel.dx === 0 && vel.dy === 0) continue;
+
+    const collidable = world.hasComponent(id, 'collider');
+    if (collidable) {
+      const pos = resolveMove(tf.x, tf.y, vel.dx * delta, vel.dy * delta);
+      tf.x = pos.x;
+      tf.y = pos.y;
+    } else {
+      // Non-collidable entities (e.g. decorative) just clamp to world.
+      tf.x = Math.max(0, Math.min(WORLD_W - TILE_SIZE, tf.x + vel.dx * delta));
+      tf.y = Math.max(0, Math.min(WORLD_H - TILE_SIZE, tf.y + vel.dy * delta));
+    }
+  }
+}
+
+// --- AnimationSystem ---
+// Advances animator timers for all animated entities.
+function AnimationSystem(delta) {
+  const ids = world.query('animator');
+  for (const id of ids) {
+    animatorUpdate(world.getComponent(id, 'animator'), delta);
+  }
+}
+
+// --- CameraSystem ---
+// Follows the player entity.
+function CameraSystem() {
+  const ids = world.query('player', 'transform');
+  if (ids.length === 0) return;
+  const tf = world.getComponent(ids[0], 'transform');
+  camera.follow(tf.x + TILE_SIZE / 2, tf.y + TILE_SIZE / 2);
+}
+
+// --- RenderSystem ---
+// Draws all entities with [transform + sprite | animator].
+// Entities with a 'sprite' component use a fixed sprite buffer.
+// Entities with an 'animator' component resolve the current frame.
+function RenderSystem(elapsed) {
+  const ids = world.query('transform');
+  for (const id of ids) {
+    const tf   = world.getComponent(id, 'transform');
+    const anim = world.getComponent(id, 'animator');
+
+    // Cull — is this entity's tile visible on screen?
+    if (!camera.isVisible(tf.x, tf.y)) continue;
+
+    let buf    = null;
+    let flipX  = false;
+    let flipY  = false;
+
+    if (anim) {
+      const spriteName = animatorSprite(anim);
+      buf   = spriteName ? spriteCache[spriteName] : null;
+      flipX = anim.flipX;
+      flipY = anim.flipY;
+    } else {
+      const sp = world.getComponent(id, 'sprite');
+      if (sp) {
+        buf   = sp.buf || spriteCache[sp.name];
+        flipX = sp.flipX || false;
+        flipY = sp.flipY || false;
+      }
+    }
+
+    if (!buf) continue;
+    const [sx, sy] = camera.toScreen(tf.x, tf.y);
+    blitBuffer(buf, sx | 0, sy | 0, flipX, flipY);
+  }
+}
+
+// ============================================================
+// SECTION 12: INPUT
+// (Identical to v2 — reproduced for self-containment.)
+// ============================================================
 const ACTION_MAP = {
-  // action: { keys: [KeyboardEvent.code...], gamepadButtons: [index...] }
   up:     { keys: ['ArrowUp',    'KeyW'],  gamepadButtons: [12] },
   down:   { keys: ['ArrowDown',  'KeyS'],  gamepadButtons: [13] },
   left:   { keys: ['ArrowLeft',  'KeyA'],  gamepadButtons: [14] },
   right:  { keys: ['ArrowRight', 'KeyD'],  gamepadButtons: [15] },
-  action: { keys: ['KeyZ', 'Space'],       gamepadButtons: [0]  },
-  cancel: { keys: ['KeyX', 'Escape'],      gamepadButtons: [1]  },
-  start:  { keys: ['Enter'],               gamepadButtons: [9]  },
+  action: { keys: ['KeyZ','Space'],        gamepadButtons: [0]  },
+  cancel: { keys: ['KeyX','Escape'],       gamepadButtons: [1]  },
 };
 
 const input = (() => {
-  // Raw state
-  const keysDown    = new Set();
-  const keysPressed = new Set(); // cleared each frame
+  const keysDown     = new Set();
+  const keysPressed  = new Set();
   const keysReleased = new Set();
+  const snap = { held: {}, pressed: {}, released: {}, axis: { x: 0, y: 0 } };
 
-  // Snapshot state (stable within a frame)
-  const snapshot = {
-    held: {},
-    pressed: {},
-    released: {},
-    // Analog stick (gamepad only)
-    axis: { x: 0, y: 0 },
-  };
-
-  // Keyboard listeners
   window.addEventListener('keydown', e => {
-    if (!keysDown.has(e.code)) {
-      keysPressed.add(e.code);
-    }
+    if (!keysDown.has(e.code)) keysPressed.add(e.code);
     keysDown.add(e.code);
-    // Prevent arrow key scrolling
-    if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)) {
+    if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code))
       e.preventDefault();
-    }
   });
-
   window.addEventListener('keyup', e => {
     keysDown.delete(e.code);
     keysReleased.add(e.code);
   });
 
-  // Called once per frame at the START of the game loop
   function update() {
-    // Poll gamepad
-    const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
-    const gp = Array.from(gamepads).find(g => g && g.connected) || null;
+    const gp = Array.from(navigator.getGamepads?.() || []).find(g => g?.connected);
+    snap.axis.x = gp && Math.abs(gp.axes[0]) > 0.15 ? gp.axes[0] : 0;
+    snap.axis.y = gp && Math.abs(gp.axes[1]) > 0.15 ? gp.axes[1] : 0;
 
-    // Analog stick
-    if (gp) {
-      snapshot.axis.x = Math.abs(gp.axes[0]) > 0.15 ? gp.axes[0] : 0;
-      snapshot.axis.y = Math.abs(gp.axes[1]) > 0.15 ? gp.axes[1] : 0;
-    } else {
-      snapshot.axis.x = 0;
-      snapshot.axis.y = 0;
+    for (const [action, map] of Object.entries(ACTION_MAP)) {
+      const gpHeld = gp ? map.gamepadButtons.some(b => gp.buttons[b]?.pressed) : false;
+      snap.held[action]     = map.keys.some(k => keysDown.has(k))    || gpHeld;
+      snap.pressed[action]  = map.keys.some(k => keysPressed.has(k)) ||
+                              (gpHeld && !snap.held[action + '_gp']);
+      snap.released[action] = map.keys.some(k => keysReleased.has(k));
+      snap.held[action + '_gp'] = gpHeld;
     }
-
-    // Build action state
-    for (const [action, mapping] of Object.entries(ACTION_MAP)) {
-      const keyHeld     = mapping.keys.some(k => keysDown.has(k));
-      const keyPressed  = mapping.keys.some(k => keysPressed.has(k));
-      const keyReleased = mapping.keys.some(k => keysReleased.has(k));
-
-      let gpHeld    = false;
-      let gpPressed = false;
-      if (gp) {
-        gpHeld = mapping.gamepadButtons.some(b => gp.buttons[b]?.pressed);
-        // Gamepad press detection: compare with prev frame
-        gpPressed = mapping.gamepadButtons.some(b =>
-          gp.buttons[b]?.pressed && !snapshot.held[action + '_gp']
-        );
-      }
-
-      snapshot.held[action]     = keyHeld || gpHeld;
-      snapshot.pressed[action]  = keyPressed || gpPressed;
-      snapshot.released[action] = keyReleased;
-
-      // Store raw gp held for next frame edge detection
-      snapshot.held[action + '_gp'] = gpHeld;
-    }
-
-    // Clear per-frame sets
     keysPressed.clear();
     keysReleased.clear();
   }
 
-  // Public API
-  // input.held('up')     — true while key is held
-  // input.pressed('up')  — true only on the frame the key was pressed
-  // input.released('up') — true only on the frame the key was released
   return {
     update,
-    held:     action => !!snapshot.held[action],
-    pressed:  action => !!snapshot.pressed[action],
-    released: action => !!snapshot.released[action],
-    axis:     ()     => snapshot.axis,
+    held:     a => !!snap.held[a],
+    pressed:  a => !!snap.pressed[a],
+    released: a => !!snap.released[a],
+    axis:     () => snap.axis,
   };
 })();
 
 // ============================================================
-// SECTION 8: GAME STATE & LOOP
+// SECTION 13: WORLD MAP DATA
 // ============================================================
 
-const state = {
-  player: {
-    // pixel position (not tile — allows sub-tile movement)
-    x: 9 * TILE_SIZE,
-    y: 9 * TILE_SIZE,
-    speed: 40,     // pixels per second
-    facing: 'down',
-    // Palette-swapped variant for demo (recolored player)
-    swappedBuf: buildPaletteSwappedSprite('player', { 16: 27, 5: 27 }), // blue→pink-red
-  },
-  elapsed: 0,
-  fps: 0,
-  fpsTimer: 0,
-  fpsFrames: 0,
+// Shorthand aliases for map readability.
+const G = 'grass', S = 'stone', W = 'water', T = 'tree', L = 'wall', _ = null;
+
+// BG layer — 36 rows × 40 cols. Every cell must be non-null.
+const LAYER_BG = [
+//col:0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39
+/*r0*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
+/*r1*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
+/*r2*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
+/*r3*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
+/*r4*/[G, G, G, G, G,'water','water','water','water','water',G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
+/*r5*/[G, G, G, G, G,'water','water','water','water','water',G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
+/*r6*/[G, G, G, G, G,'water','water','water','water','water',G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
+/*r7*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
+/*r8*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
+/*r9*/[G, G, G, G, G, G, S, S, S, S, S, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
+/*10*/[G, G, G, G, G, G, S, S, S, S, S, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
+/*11*/[G, G, G, G, G, G, S, S, S, S, S, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
+/*12*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
+/*13*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
+/*14*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
+/*15*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
+/*16*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
+/*17*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
+/*18*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
+/*19*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
+/*20*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
+/*21*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
+/*22*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
+/*23*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
+/*24*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
+/*25*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
+/*26*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
+/*27*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
+/*28*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
+/*29*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
+/*30*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
+/*31*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
+/*32*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
+/*33*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
+/*34*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
+/*35*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
+];
+
+// Object layer (sparse — null = empty).
+const LAYER_OBJECTS = Array.from({length: WORLD_ROWS}, () => Array(WORLD_COLS).fill(null));
+// Place trees
+[[1,1],[1,3],[2,6],[3,15],[5,14],[0,12],[8,20],[10,22],[15,5],[14,8],[20,2],[22,4]].forEach(([r,c])=>{
+  if(r < WORLD_ROWS && c < WORLD_COLS) LAYER_OBJECTS[r][c] = 'tree';
+});
+// Place flowers
+[[3,3],[3,7],[6,2],[7,12],[8,15],[12,6],[18,10],[20,14]].forEach(([r,c])=>{
+  if(r < WORLD_ROWS && c < WORLD_COLS) LAYER_OBJECTS[r][c] = 'flower';
+});
+// Wall border (row 14–17, col 20–26)
+for (let r = 14; r <= 17; r++)
+  for (let c = 20; c <= 26; c++)
+    LAYER_OBJECTS[r][c] = (r === 14 || r === 17 || c === 20 || c === 26) ? 'wall' : null;
+
+// Collision layer — true = solid tile.
+const LAYER_COLLISION = Array.from({length: WORLD_ROWS}, () => Array(WORLD_COLS).fill(false));
+
+// Water is solid
+for (let r = 4; r <= 6; r++)
+  for (let c = 5; c <= 9; c++)
+    LAYER_COLLISION[r][c] = true;
+
+// Wall border is solid
+for (let r = 14; r <= 17; r++)
+  for (let c = 20; c <= 26; c++)
+    if (r === 14 || r === 17 || c === 20 || c === 26)
+      LAYER_COLLISION[r][c] = true;
+
+// Trees as solid
+[[1,1],[1,3],[2,6],[3,15],[5,14],[0,12],[8,20],[10,22],[15,5],[14,8],[20,2],[22,4]].forEach(([r,c])=>{
+  if(r < WORLD_ROWS && c < WORLD_COLS) LAYER_COLLISION[r][c] = true;
+});
+
+// ============================================================
+// SECTION 14: ENTITY INITIALIZATION
+// ============================================================
+
+// Player entity
+const playerAnimClips = {
+  idle:      { frames: ['player_idle'],           durations: 0.2  },
+  walk_down: { frames: ['player_d0','player_d1'], durations: 0.18 },
+  walk_up:   { frames: ['player_u0','player_u1'], durations: 0.18 },
+  walk_side: { frames: ['player_s0','player_s1'], durations: 0.18 },
 };
 
-function update(delta) {
-  input.update();
+const playerId = world.createEntity({
+  player:    true,
+  transform: { x: 15 * TILE_SIZE, y: 15 * TILE_SIZE },
+  velocity:  { dx: 0, dy: 0, speed: 60 },
+  animator:  createAnimator(playerAnimClips, 'idle'),
+  collider:  true,
+});
 
-  // Player movement
-  let dx = 0, dy = 0;
-  const axis = input.axis();
+// NPC A — yellow, patrols a loop
+const npcAClips = {
+  idle:      { frames: ['npc_a'],           durations: 0.3  },
+  walk_down: { frames: ['npc_a'],           durations: 0.3  },
+  walk_up:   { frames: ['npc_a'],           durations: 0.3  },
+  walk_side: { frames: ['npc_a'],           durations: 0.3  },
+};
+world.createEntity({
+  transform: { x: 12 * TILE_SIZE, y: 12 * TILE_SIZE },
+  velocity:  { dx: 0, dy: 0, speed: 30 },
+  animator:  createAnimator(npcAClips, 'idle'),
+  collider:  true,
+  patrol: {
+    speed: 30,
+    waypointIdx: 0,
+    waypoints: [
+      { x: 12 * TILE_SIZE, y: 12 * TILE_SIZE },
+      { x: 17 * TILE_SIZE, y: 12 * TILE_SIZE },
+      { x: 17 * TILE_SIZE, y: 17 * TILE_SIZE },
+      { x: 12 * TILE_SIZE, y: 17 * TILE_SIZE },
+    ],
+  },
+});
 
-  if (input.held('left')  || axis.x < -0.15) dx = -1;
-  if (input.held('right') || axis.x >  0.15) dx =  1;
-  if (input.held('up')    || axis.y < -0.15) dy = -1;
-  if (input.held('down')  || axis.y >  0.15) dy =  1;
+// NPC B — pink, smaller patrol
+const npcBClips = {
+  idle:      { frames: ['npc_b'], durations: 0.3 },
+  walk_down: { frames: ['npc_b'], durations: 0.3 },
+  walk_up:   { frames: ['npc_b'], durations: 0.3 },
+  walk_side: { frames: ['npc_b'], durations: 0.3 },
+};
+world.createEntity({
+  transform: { x: 25 * TILE_SIZE, y: 8 * TILE_SIZE },
+  velocity:  { dx: 0, dy: 0, speed: 20 },
+  animator:  createAnimator(npcBClips, 'idle'),
+  collider:  true,
+  patrol: {
+    speed: 20,
+    waypointIdx: 0,
+    waypoints: [
+      { x: 25 * TILE_SIZE, y: 8  * TILE_SIZE },
+      { x: 30 * TILE_SIZE, y: 8  * TILE_SIZE },
+      { x: 30 * TILE_SIZE, y: 13 * TILE_SIZE },
+      { x: 25 * TILE_SIZE, y: 13 * TILE_SIZE },
+    ],
+  },
+});
 
-  state.player.x = Math.max(0, Math.min(LOGICAL_W - TILE_SIZE, state.player.x + dx * state.player.speed * delta));
-  state.player.y = Math.max(0, Math.min(LOGICAL_H - TILE_SIZE, state.player.y + dy * state.player.speed * delta));
+// ============================================================
+// SECTION 15: MAIN LOOP
+// ============================================================
 
-  // FPS counter
-  state.fpsFrames++;
-  state.fpsTimer += delta;
-  if (state.fpsTimer >= 0.5) {
-    state.fps = Math.round(state.fpsFrames / state.fpsTimer);
-    state.fpsTimer  = 0;
-    state.fpsFrames = 0;
-  }
-}
+// System execution order matters:
+//   1. Input   — updates player velocity/animation intent
+//   2. AI      — updates NPC velocity/animation intent
+//   3. Movement— applies velocity with collision resolution
+//   4. Camera  — repositions viewport after entities move
+//   5. Anim    — advances all animator timers
+//   6. Render  — draws everything
 
-function render() {
-  clearBuffer(0);
-
-  // Layer 0: background tilemap
-  drawTilemap(LAYER_BG, state.elapsed);
-
-  // Layer 1: object tilemap (trees, etc.)
-  drawTilemap(LAYER_OBJECTS, state.elapsed);
-
-  // Layer 2: player sprite at pixel-exact position
-  blitSprite('player', state.player.x | 0, state.player.y | 0);
-
-  // Palette-swapped smiley demo
-  blitSpriteTile('smiley', 16, 2);
-  blitSpriteTile('smiley', 17, 2, false, false, buildPaletteSwappedSprite('smiley', { 7: 27 }));
-
-  // Flush entire framebuffer in one GPU call
-  flushBuffer();
-
-  // Debug HUD (drawn via ctx after flush — avoids polluting framebuffer)
-  const p = state.player;
-  document.getElementById('debug').textContent =
-    `FPS: ${state.fps}\nPlayer: ${Math.floor(p.x)},${Math.floor(p.y)}\nTile: ${Math.floor(p.x/TILE_SIZE)},${Math.floor(p.y/TILE_SIZE)}\n[WASD/Arrows] Move`;
-}
+const SYSTEMS = [
+  (delta)          => input.update(),
+  (delta)          => InputSystem(delta),
+  (delta)          => AISystem(delta),
+  (delta)          => MovementSystem(delta),
+  ()               => CameraSystem(),
+  (delta)          => AnimationSystem(delta),
+];
 
 let lastTime = 0;
+let elapsed  = 0;
+let fps = 0, fpsTimer = 0, fpsFrames = 0;
 
 function loop(timestamp) {
-  const delta = Math.min((timestamp - lastTime) / 1000, 0.05); // cap at 50ms
+  const delta = Math.min((timestamp - lastTime) / 1000, 0.05);
   lastTime = timestamp;
-  state.elapsed += delta;
+  elapsed += delta;
 
-  update(delta);
-  render();
+  // FPS
+  fpsFrames++;
+  fpsTimer += delta;
+  if (fpsTimer >= 0.5) {
+    fps = Math.round(fpsFrames / fpsTimer);
+    fpsTimer = fpsFrames = 0;
+  }
+
+  // Run logic systems.
+  for (const sys of SYSTEMS) sys(delta, elapsed);
+
+  // Render pass.
+  clearBuffer(0);
+  drawTilemap(LAYER_BG,      elapsed);
+  drawTilemap(LAYER_OBJECTS, elapsed);
+  RenderSystem(elapsed);
+  flushBuffer();
+
+  // Debug HUD (drawn via ctx so it doesn't pollute framebuffer).
+  const ptf = world.getComponent(playerId, 'transform');
+  document.getElementById('debug').textContent =
+    `FPS: ${fps}  Cam: ${camera.x},${camera.y}\n` +
+    `Player world: ${ptf.x|0},${ptf.y|0}  tile: ${ptf.x/TILE_SIZE|0},${ptf.y/TILE_SIZE|0}\n` +
+    `[WASD/Arrows] Move`;
 
   requestAnimationFrame(loop);
 }
