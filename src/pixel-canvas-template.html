@@ -1,74 +1,60 @@
-@@ -0,0 +1,1101 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Pixel Canvas v3</title>
+<title>Pixel Canvas v4</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
     background: #0a0a0f;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 100vw;
-    height: 100vh;
-    overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    width: 100vw; height: 100vh; overflow: hidden;
   }
-  canvas {
-    display: block;
-    image-rendering: pixelated;
-    image-rendering: crisp-edges;
-  }
+  canvas { display: block; image-rendering: pixelated; image-rendering: crisp-edges; }
   #debug {
-    position: fixed;
-    top: 8px;
-    left: 8px;
-    color: #0f0;
-    font: 10px/1.6 monospace;
+    position: fixed; top: 8px; left: 8px;
+    color: #0f0; font: 9px/1.5 monospace;
+    pointer-events: none; white-space: pre;
+    background: rgba(0,0,0,0.55); padding: 4px 6px; border-radius: 2px;
+  }
+  #hint {
+    position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%);
+    color: #555; font: 9px monospace; white-space: pre; text-align: center;
     pointer-events: none;
-    white-space: pre;
-    background: rgba(0,0,0,0.5);
-    padding: 4px 6px;
   }
 </style>
 </head>
 <body>
 <canvas id="screen"></canvas>
 <div id="debug"></div>
+<div id="hint">WASD/ARROWS: move  |  Z/SPACE: action/dialog  |  F5: save  |  F9: load</div>
 <script>
 'use strict';
 
-// ============================================================
-// CONFIG
-// Screen = logical viewport in pixels.
-// World  = total map size in tiles (can exceed screen).
-// ============================================================
-const TILE_SIZE  = 8;
-const COLS       = 20;              // screen width in tiles
-const ROWS       = 18;              // screen height in tiles
-const LOGICAL_W  = COLS * TILE_SIZE; // 160px
-const LOGICAL_H  = ROWS * TILE_SIZE; // 144px
-const WORLD_COLS = 40;              // world map width in tiles
-const WORLD_ROWS = 36;              // world map height in tiles
-const WORLD_W    = WORLD_COLS * TILE_SIZE; // 320px
-const WORLD_H    = WORLD_ROWS * TILE_SIZE; // 288px
+// ================================================================
+// SECTION 1: CONFIG
+// Screen = fixed logical size. World = per-scene tile dimensions.
+// ================================================================
+const TILE_SIZE = 8;
+const COLS      = 20;  // viewport width  in tiles
+const ROWS      = 18;  // viewport height in tiles
+const LOGICAL_W = COLS * TILE_SIZE;  // 160
+const LOGICAL_H = ROWS * TILE_SIZE;  // 144
 
-// ============================================================
-// SECTION 1: PALETTE
-// ============================================================
+// ================================================================
+// SECTION 2: PALETTE
+// All colors indexed. Sprites reference integer indices, never hex.
+// ================================================================
 const PALETTE = [
-  /* 00 */ '#222034', /* 01 */ '#45283C', /* 02 */ '#663931',
-  /* 03 */ '#8F563B', /* 04 */ '#DF7126', /* 05 */ '#D9A066',
-  /* 06 */ '#EEC39A', /* 07 */ '#FBF236', /* 08 */ '#99E550',
-  /* 09 */ '#6ABE30', /* 10 */ '#37946E', /* 11 */ '#4B692F',
-  /* 12 */ '#524B24', /* 13 */ '#323C39', /* 14 */ '#3F3F74',
-  /* 15 */ '#306082', /* 16 */ '#5B6EE1', /* 17 */ '#639BFF',
-  /* 18 */ '#5FCDE4', /* 19 */ '#CBDBFC', /* 20 */ '#FFFFFF',
-  /* 21 */ '#9BADB7', /* 22 */ '#847E87', /* 23 */ '#696A6A',
-  /* 24 */ '#595652', /* 25 */ '#76428A', /* 26 */ '#AC3232',
-  /* 27 */ '#D95763', /* 28 */ '#4a3020', /* 29 */ '#2a1a10',
+  /*00*/'#222034', /*01*/'#45283C', /*02*/'#663931', /*03*/'#8F563B',
+  /*04*/'#DF7126', /*05*/'#D9A066', /*06*/'#EEC39A', /*07*/'#FBF236',
+  /*08*/'#99E550', /*09*/'#6ABE30', /*10*/'#37946E', /*11*/'#4B692F',
+  /*12*/'#524B24', /*13*/'#323C39', /*14*/'#3F3F74', /*15*/'#306082',
+  /*16*/'#5B6EE1', /*17*/'#639BFF', /*18*/'#5FCDE4', /*19*/'#CBDBFC',
+  /*20*/'#FFFFFF', /*21*/'#9BADB7', /*22*/'#847E87', /*23*/'#696A6A',
+  /*24*/'#595652', /*25*/'#76428A', /*26*/'#AC3232', /*27*/'#D95763',
+  /*28*/'#4a3020', /*29*/'#2a1a10', /*30*/'#1a1a2e', /*31*/'#0f3460',
 ];
 
 const paletteRGBA = PALETTE.map(hex => {
@@ -76,69 +62,56 @@ const paletteRGBA = PALETTE.map(hex => {
   return [(n >> 16) & 0xFF, (n >> 8) & 0xFF, n & 0xFF, 255];
 });
 
-// ============================================================
-// SECTION 2: SPRITES
-// 8x8 flat arrays. Values = palette indices | null (transparent).
-// ============================================================
+// ================================================================
+// SECTION 3: SPRITE DEFINITIONS
+// 8×8 flat arrays: palette indices or null (transparent).
+// Row-major: index = row * 8 + col.
+// ================================================================
 const SPRITES = {
-
   // ---- Terrain ----
   grass: [
-     9, 9, 8, 9, 9, 9, 8, 9,
-     8, 9, 9, 9, 8, 9, 9, 8,
-     9, 9, 8, 9, 9, 8, 9, 9,
-    11,11,11, 9,11,11,11,11,
-    11,11,11,11,11,11,11,11,
-    12,11,11,11,12,11,11,12,
-    11,11,12,11,11,11,12,11,
-    11,12,11,11,11,12,11,11,
+     9, 9, 8, 9, 9, 9, 8, 9,   8, 9, 9, 9, 8, 9, 9, 8,
+     9, 9, 8, 9, 9, 8, 9, 9,  11,11,11, 9,11,11,11,11,
+    11,11,11,11,11,11,11,11,  12,11,11,11,12,11,11,12,
+    11,11,12,11,11,11,12,11,  11,12,11,11,11,12,11,11,
   ],
-
   stone: [
-    22,21,22,22,22,22,21,22,
-    21,22,22,22,21,22,22,22,
-    22,22,22,21,22,22,22,21,
-    23,23,23,23,23,23,23,23,
-    22,22,22,23,22,22,22,23,
-    22,23,22,22,22,23,22,22,
-    23,22,22,22,23,22,22,22,
-    22,22,23,22,22,22,23,22,
+    22,21,22,22,22,22,21,22,  21,22,22,22,21,22,22,22,
+    22,22,22,21,22,22,22,21,  23,23,23,23,23,23,23,23,
+    22,22,22,23,22,22,22,23,  22,23,22,22,22,23,22,22,
+    23,22,22,22,23,22,22,22,  22,22,23,22,22,22,23,22,
   ],
-
   wall: [
-    24,24,28,24,24,24,28,24,
-    28,29,29,29,29,29,29,28,
-    24,29,24,24,24,24,29,24,
-    24,29,24,24,24,24,29,24,
-    28,29,29,29,29,29,29,28,
-    24,29,24,24,24,24,29,24,
-    24,29,24,24,24,24,29,24,
-    28,29,29,29,29,29,29,28,
+    24,24,28,24,24,24,28,24,  28,29,29,29,29,29,29,28,
+    24,29,24,24,24,24,29,24,  24,29,24,24,24,24,29,24,
+    28,29,29,29,29,29,29,28,  24,29,24,24,24,24,29,24,
+    24,29,24,24,24,24,29,24,  28,29,29,29,29,29,29,28,
   ],
-
+  cave_wall: [
+    30,30,29,30,30,30,29,30,  29,14,14,14,14,14,14,29,
+    30,14,30,30,30,30,14,30,  30,14,30,31,31,30,14,30,
+    29,14,14,14,14,14,14,29,  30,14,30,30,30,30,14,30,
+    30,14,31,30,30,31,14,30,  29,14,14,14,14,14,14,29,
+  ],
+  cave_floor: [
+    13,13,24,13,13,13,24,13,  24,13,13,13,24,13,13,24,
+    13,13,24,13,13,24,13,13,  23,23,23,13,23,23,23,23,
+    23,23,23,23,23,23,23,23,  13,23,23,23,13,23,23,13,
+    23,13,23,23,23,13,23,23,  23,23,13,23,23,23,13,23,
+  ],
   water0: [
-    18,17,18,18,18,17,18,18,
-    18,18,17,18,18,18,17,18,
-    15,18,18,18,15,18,18,18,
-    18,15,18,18,18,15,18,18,
-    18,18,18,15,18,18,18,15,
-    18,18,15,18,18,18,15,18,
-    17,18,18,18,17,18,18,18,
-    18,17,18,18,18,17,18,18,
+    18,17,18,18,18,17,18,18,  18,18,17,18,18,18,17,18,
+    15,18,18,18,15,18,18,18,  18,15,18,18,18,15,18,18,
+    18,18,18,15,18,18,18,15,  18,18,15,18,18,18,15,18,
+    17,18,18,18,17,18,18,18,  18,17,18,18,18,17,18,18,
   ],
-
   water1: [
-    18,18,17,18,18,18,17,18,
-    17,18,18,18,17,18,18,18,
-    18,18,18,15,18,18,18,15,
-    18,18,15,18,18,18,15,18,
-    15,18,18,18,15,18,18,18,
-    18,15,18,18,18,15,18,18,
-    18,18,18,17,18,18,18,17,
-    18,18,17,18,18,18,17,18,
+    18,18,17,18,18,18,17,18,  17,18,18,18,17,18,18,18,
+    18,18,18,15,18,18,18,15,  18,18,15,18,18,18,15,18,
+    15,18,18,18,15,18,18,18,  18,15,18,18,18,15,18,18,
+    18,18,18,17,18,18,18,17,  18,18,17,18,18,18,17,18,
   ],
-
-  // ---- Decoration ----
+  // ---- Decor ----
   tree: [
     null,null, 8,null,null, 8,null,null,
     null, 8,   8,  8,  8,  8,  8,null,
@@ -149,18 +122,37 @@ const SPRITES = {
     null,null,null, 3,null,null,null,null,
     null,null,null,null,null,null,null,null,
   ],
-
   flower: [
     null,null,null, 7,null,null,null,null,
-    null,null, 7,  7,  7,null,null,null,
+    null,null, 7,   7,  7,null,null,null,
     null,null,null, 7,null,null,null,null,
-    null, 8, null,null,null, 7,null,null,
-       8, 9,  8,null,null, 7, 7,null,
-    null, 8, null,null,null, 7,null,null,
+    null, 8,null,null,null, 7,null,null,
+       8, 9,  8,null,null, 7,  7,null,
+    null, 8,null,null,null, 7,null,null,
     null,null,null,null,null,null,null,null,
     null,null,null,null,null,null,null,null,
   ],
-
+  crystal: [  // cave decoration
+    null,null,19,null,null,null,null,null,
+    null,19,  18,  19,null,null,null,null,
+      19, 18,  20,  18,  19,null,null,null,
+    null,19,  18,  19,null,null,null,null,
+    null,null,19,null,null,19,  18,  19,
+    null,null,null,null,19, 18,  20,  18,
+    null,null,null,null,null,19,null,null,
+    null,null,null,null,null,null,null,null,
+  ],
+  // Portal glyph (magic circle)
+  portal: [
+    null,null, 25, 25, 25,null,null,null,
+    null, 25,  19, 18, 19,  25,null,null,
+      25, 19,  18, 20, 18,  19,  25,null,
+      25, 18,  20, 25, 20,  18,  25,null,
+      25, 19,  18, 20, 18,  19,  25,null,
+    null, 25,  19, 18, 19,  25,null,null,
+    null,null, 25, 25, 25,null,null,null,
+    null,null,null,null,null,null,null,null,
+  ],
   // ---- NPCs ----
   npc_a: [
     null,null,  7,  7,  7,  7,null,null,
@@ -172,7 +164,6 @@ const SPRITES = {
     null,  5,null,null,null,null,  5,null,
     null,  5,null,null,null,null,  5,null,
   ],
-
   npc_b: [
     null,null,  5,  5,  5,  5,null,null,
     null,  5, 13,  5,  5, 13,  5,null,
@@ -183,9 +174,8 @@ const SPRITES = {
     null,  6,null,null,null,null,  6,null,
     null,  6,null,null,null,null,  6,null,
   ],
-
-  // ---- Player walking frames (down) ----
-  // Frame 0: left foot forward
+  // ---- Player animation frames ----
+  // Walk down (feet alternate)
   player_d0: [
     null,null,  6,  6,  6,  6,null,null,
     null,  6, 24,  6,  6, 24,  6,null,
@@ -196,7 +186,6 @@ const SPRITES = {
     null,  5,  5,null,null,  5,null,null,
     null,null,  5,null,null,null,null,null,
   ],
-  // Frame 1: right foot forward
   player_d1: [
     null,null,  6,  6,  6,  6,null,null,
     null,  6, 24,  6,  6, 24,  6,null,
@@ -204,10 +193,9 @@ const SPRITES = {
     null, 16, 16, 16, 16, 16, 16,null,
       16, 16,  5, 16, 16,  5, 16, 16,
     null, 16,  5,  5,  5,  5, 16,null,
-    null, null,null,null,  5,  5,null,null,
+    null,null,null,null,  5,  5,null,null,
     null,null,null,null,null,  5,null,null,
   ],
-  // Idle (standing)
   player_idle: [
     null,null,  6,  6,  6,  6,null,null,
     null,  6, 24,  6,  6, 24,  6,null,
@@ -218,7 +206,7 @@ const SPRITES = {
     null,  5,null,null,null,null,  5,null,
     null,  5,null,null,null,null,  5,null,
   ],
-  // Up-facing
+  // Walk up
   player_u0: [
     null,null,  6,  6,  6,  6,null,null,
     null,  6,  6, 24, 24,  6,  6,null,
@@ -239,7 +227,7 @@ const SPRITES = {
     null,null,null,null,  5,  5,null,null,
     null,null,null,null,null,  5,null,null,
   ],
-  // Side-facing (left; flip for right)
+  // Walk side (flip for left)
   player_s0: [
     null,null,  6,  6,  6,null,null,null,
     null,  6, 24,  6,  6,  6,null,null,
@@ -257,14 +245,91 @@ const SPRITES = {
     null, 16, 16, 16, 16, 16, 16,null,
     null, 16,  5, 16, 16,  5, 16,null,
     null, 16,  5,  5,  5,  5,null,null,
-    null,null,null,  5,  5, null,null,null,
+    null,null,null,  5,  5,null,null,null,
     null,null,null,null,  5,null,null,null,
   ],
 };
 
-// ============================================================
-// SECTION 3: SPRITE CACHE — rasterize palette indices → RGBA
-// ============================================================
+// ================================================================
+// SECTION 4: BITMAP FONT
+//
+// 5-wide, 7-tall pixel font. Each char defined as 7 rows of 5-bit
+// masks (bit4 = leftmost pixel). Row 6 is usually 0 (inter-line gap).
+// Source defined as readable binary strings; converted at startup.
+// drawText renders directly into the framebuffer for pixel-perfect
+// scaling. Char width = 6px (5+1 gap), char height = 8px (7+1 gap).
+// ================================================================
+const FONT_SRC = {
+  ' ':['00000','00000','00000','00000','00000','00000','00000'],
+  'A':['01110','10001','10001','11111','10001','10001','00000'],
+  'B':['11110','10001','11110','10001','10001','11110','00000'],
+  'C':['01110','10001','10000','10000','10001','01110','00000'],
+  'D':['11100','10010','10001','10001','10010','11100','00000'],
+  'E':['11111','10000','11110','10000','10000','11111','00000'],
+  'F':['11111','10000','11110','10000','10000','10000','00000'],
+  'G':['01110','10001','10000','10111','10001','01110','00000'],
+  'H':['10001','10001','11111','10001','10001','10001','00000'],
+  'I':['01110','00100','00100','00100','00100','01110','00000'],
+  'J':['00111','00010','00010','00010','10010','01100','00000'],
+  'K':['10001','10010','11100','10010','10001','10001','00000'],
+  'L':['10000','10000','10000','10000','10000','11111','00000'],
+  'M':['10001','11011','10101','10001','10001','10001','00000'],
+  'N':['10001','11001','10101','10011','10001','10001','00000'],
+  'O':['01110','10001','10001','10001','10001','01110','00000'],
+  'P':['11110','10001','11110','10000','10000','10000','00000'],
+  'Q':['01110','10001','10001','10101','10011','01111','00000'],
+  'R':['11110','10001','11110','10100','10010','10001','00000'],
+  'S':['01111','10000','01110','00001','00001','11110','00000'],
+  'T':['11111','00100','00100','00100','00100','00100','00000'],
+  'U':['10001','10001','10001','10001','10001','01110','00000'],
+  'V':['10001','10001','10001','10001','01010','00100','00000'],
+  'W':['10001','10001','10001','10101','11011','10001','00000'],
+  'X':['10001','01010','00100','00100','01010','10001','00000'],
+  'Y':['10001','10001','01010','00100','00100','00100','00000'],
+  'Z':['11111','00001','00010','00100','01000','11111','00000'],
+  '0':['01110','10001','10011','10101','11001','01110','00000'],
+  '1':['00100','01100','00100','00100','00100','01110','00000'],
+  '2':['01110','10001','00010','00100','01000','11111','00000'],
+  '3':['11110','00001','00110','00001','00001','11110','00000'],
+  '4':['00010','00110','01010','10010','11111','00010','00000'],
+  '5':['11111','10000','11110','00001','00001','11110','00000'],
+  '6':['00110','01000','11110','10001','10001','01110','00000'],
+  '7':['11111','00001','00010','00100','01000','01000','00000'],
+  '8':['01110','10001','01110','10001','10001','01110','00000'],
+  '9':['01110','10001','10001','01111','00001','01110','00000'],
+  '!':['00100','00100','00100','00100','00000','00100','00000'],
+  '?':['01110','10001','00010','00100','00000','00100','00000'],
+  '.':['00000','00000','00000','00000','00000','00100','00000'],
+  ',':['00000','00000','00000','00000','00100','00100','01000'],
+  ':':['00000','00100','00000','00000','00100','00000','00000'],
+  ';':['00000','00100','00000','00000','00100','00100','01000'],
+  '-':['00000','00000','11111','00000','00000','00000','00000'],
+  '\'':['01100','01100','00000','00000','00000','00000','00000'],
+  '"':['01010','01010','00000','00000','00000','00000','00000'],
+  '(':['00010','00100','01000','01000','00100','00010','00000'],
+  ')':['01000','00100','00010','00010','00100','01000','00000'],
+  '/':['00001','00010','00100','01000','10000','00000','00000'],
+  '#':['01010','11111','01010','01010','11111','01010','00000'],
+  '*':['00000','10101','01110','11111','01110','10101','00000'],
+  '>':['10000','01000','00100','00100','01000','10000','00000'],
+  '<':['00001','00010','00100','00100','00010','00001','00000'],
+  '+':['00000','00100','00100','11111','00100','00100','00000'],
+  '_':['00000','00000','00000','00000','00000','11111','00000'],
+};
+
+const FONT = {};
+for (const [ch, rows] of Object.entries(FONT_SRC)) {
+  FONT[ch] = rows.map(r => parseInt(r, 2));
+}
+
+const CHAR_W = 6;  // 5px glyph + 1px gap
+const CHAR_H = 8;  // 7px glyph + 1px gap
+
+// ================================================================
+// SECTION 5: SPRITE CACHE
+// Rasterizes palette-index sprite arrays to Uint8ClampedArray RGBA
+// buffers once at startup. blitBuffer then copies bytes, no lookups.
+// ================================================================
 const spriteCache = {};
 
 function buildSpriteCache() {
@@ -274,9 +339,8 @@ function buildSpriteCache() {
       const idx  = data[i];
       const base = i * 4;
       if (idx === null) { buf[base + 3] = 0; continue; }
-      const rgba = paletteRGBA[idx];
-      buf[base] = rgba[0]; buf[base+1] = rgba[1];
-      buf[base+2] = rgba[2]; buf[base+3] = 255;
+      const c = paletteRGBA[idx];
+      buf[base] = c[0]; buf[base+1] = c[1]; buf[base+2] = c[2]; buf[base+3] = 255;
     }
     spriteCache[name] = buf;
   }
@@ -292,16 +356,15 @@ function buildPaletteSwap(spriteName, indexMap) {
     const idx  = (raw !== null && indexMap[raw] !== undefined) ? indexMap[raw] : raw;
     const base = i * 4;
     if (raw === null || idx === null) { buf[base+3] = 0; continue; }
-    const rgba = paletteRGBA[idx];
-    buf[base] = rgba[0]; buf[base+1] = rgba[1];
-    buf[base+2] = rgba[2]; buf[base+3] = 255;
+    const c = paletteRGBA[idx];
+    buf[base] = c[0]; buf[base+1] = c[1]; buf[base+2] = c[2]; buf[base+3] = 255;
   }
   return buf;
 }
 
-// ============================================================
-// SECTION 4: CANVAS / FRAMEBUFFER
-// ============================================================
+// ================================================================
+// SECTION 6: CANVAS & FRAMEBUFFER
+// ================================================================
 const canvas = document.getElementById('screen');
 const ctx    = canvas.getContext('2d');
 canvas.width  = LOGICAL_W;
@@ -319,9 +382,9 @@ function fitToWindow() {
 window.addEventListener('resize', fitToWindow);
 fitToWindow();
 
-// ============================================================
-// SECTION 5: LOW-LEVEL DRAW (framebuffer writes)
-// ============================================================
+// ================================================================
+// SECTION 7: DRAW API (framebuffer writes + text)
+// ================================================================
 
 function clearBuffer(palIdx = 0) {
   const [r, g, b] = paletteRGBA[palIdx];
@@ -331,23 +394,19 @@ function clearBuffer(palIdx = 0) {
   }
 }
 
-// Blit one 8x8 RGBA buffer to screen-space pixel position (sx, sy).
-// sx/sy are already viewport-relative (world pos minus camera offset).
-// Pixels that fall outside [0, LOGICAL_W) x [0, LOGICAL_H) are clipped.
+// Blit an 8×8 RGBA buffer to screen coordinates (sx, sy).
+// Pixels outside [0,W)×[0,H) are clipped. Alpha 0 = skip.
 function blitBuffer(buf, sx, sy, flipX = false, flipY = false) {
   for (let row = 0; row < TILE_SIZE; row++) {
     const dstY = sy + row;
     if (dstY < 0 || dstY >= LOGICAL_H) continue;
     const srcRow = flipY ? TILE_SIZE - 1 - row : row;
-
     for (let col = 0; col < TILE_SIZE; col++) {
       const dstX = sx + col;
       if (dstX < 0 || dstX >= LOGICAL_W) continue;
-      const srcCol = flipX ? TILE_SIZE - 1 - col : col;
-
+      const srcCol  = flipX ? TILE_SIZE - 1 - col : col;
       const srcBase = (srcRow * TILE_SIZE + srcCol) * 4;
       if (buf[srcBase + 3] === 0) continue;
-
       const dstBase = (dstY * LOGICAL_W + dstX) * 4;
       frameBuffer[dstBase]   = buf[srcBase];
       frameBuffer[dstBase+1] = buf[srcBase+1];
@@ -370,109 +429,324 @@ function fillRectPx(px, py, w, h, palIdx) {
   }
 }
 
-function flushBuffer() {
-  ctx.putImageData(frameImageData, 0, 0);
+// Draw a bordered box into the framebuffer.
+function drawBox(x, y, w, h, bgPal, borderPal) {
+  fillRectPx(x, y, w, h, bgPal);
+  fillRectPx(x,       y,       w, 1, borderPal); // top
+  fillRectPx(x,       y+h-1,   w, 1, borderPal); // bottom
+  fillRectPx(x,       y,       1, h, borderPal); // left
+  fillRectPx(x+w-1,   y,       1, h, borderPal); // right
+  // Corner highlights (inner, 1px inset)
+  fillRectPx(x+1, y+1, 1, 1, borderPal);
+  fillRectPx(x+w-2, y+1, 1, 1, borderPal);
 }
 
-// ============================================================
-// SECTION 6: CAMERA / VIEWPORT
+// Render one glyph at pixel position (px, py) in palette color palIdx.
+function drawChar(ch, px, py, palIdx) {
+  const rows = FONT[ch.toUpperCase()] ?? FONT['?'];
+  if (!rows) return;
+  const [r, g, b] = paletteRGBA[palIdx];
+  for (let row = 0; row < 7; row++) {
+    const mask = rows[row];
+    if (!mask) continue;
+    const dstY = py + row;
+    if (dstY < 0 || dstY >= LOGICAL_H) continue;
+    for (let col = 0; col < 5; col++) {
+      if (!((mask >> (4 - col)) & 1)) continue;
+      const dstX = px + col;
+      if (dstX < 0 || dstX >= LOGICAL_W) continue;
+      const base = (dstY * LOGICAL_W + dstX) * 4;
+      frameBuffer[base] = r; frameBuffer[base+1] = g;
+      frameBuffer[base+2] = b; frameBuffer[base+3] = 255;
+    }
+  }
+}
+
+// Render a string. Supports \n for newlines. Auto-uppercases.
+function drawText(str, px, py, palIdx = 20) {
+  let x = px;
+  for (const ch of str.toUpperCase()) {
+    if (ch === '\n') { py += CHAR_H; x = px; continue; }
+    drawChar(ch, x, py, palIdx);
+    x += CHAR_W;
+  }
+}
+
+function textWidth(str)  { return (str.split('\n')[0]?.length ?? 0) * CHAR_W; }
+function textHeight(str) { return str.split('\n').length * CHAR_H; }
+
+// Push framebuffer to canvas in a single GPU upload.
+function flushBuffer() { ctx.putImageData(frameImageData, 0, 0); }
+
+// ================================================================
+// SECTION 8: CAMERA / VIEWPORT
 //
-// The camera holds a world-space position (camera.x, camera.y)
-// representing the TOP-LEFT pixel of the viewport in world space.
+// camera.x/y = world-space top-left of the viewport in pixels.
 //
-// Converting world → screen:
-//   screenX = worldX - camera.x
-//   screenY = worldY - camera.y
+// World → screen:  screenX = worldX - camera.x
+// Culling test:    object at (wx,wy) with size (w,h) is visible when
+//   wx + w > cam.x  AND  wx < cam.x + LOGICAL_W  (and same for Y).
 //
-// CULLING:
-//   An object at world position (wx, wy) with size (w, h) is
-//   culled (skipped entirely) when its world rect does not
-//   intersect the camera viewport rect.
-//
-//   Viewport rect (world space):
-//     left   = camera.x
-//     top    = camera.y
-//     right  = camera.x + LOGICAL_W
-//     bottom = camera.y + LOGICAL_H
-//
-//   Object is visible when:
-//     wx + w > camera.x   (right edge past viewport left)
-//     wx     < camera.x + LOGICAL_W  (left edge before viewport right)
-//     wy + h > camera.y
-//     wy     < camera.y + LOGICAL_H
-//
-//   Culling cost: two comparisons per object. For tilemaps the
-//   tile loop start/end indices are computed directly from camera
-//   bounds — no per-tile check needed (see drawTilemap).
-//
-// camera.follow(worldX, worldY):
-//   Centers the viewport on a world point, then clamps so the
-//   camera never shows outside the world boundary.
-// ============================================================
+// Tilemap uses range clamping instead of per-tile culling:
+//   colStart = floor(cam.x / TILE_SIZE)
+//   colEnd   = ceil((cam.x + LOGICAL_W) / TILE_SIZE)
+// This makes tile loop O(viewport tiles) not O(world tiles).
+// ================================================================
 const camera = {
-  x: 0,  // world-space left edge of viewport
-  y: 0,
+  x: 0, y: 0,
 
-  // Center on a world pixel point, clamp to world bounds.
-  follow(wx, wy) {
-    this.x = Math.round(Math.max(0, Math.min(WORLD_W - LOGICAL_W, wx - LOGICAL_W / 2)));
-    this.y = Math.round(Math.max(0, Math.min(WORLD_H - LOGICAL_H, wy - LOGICAL_H / 2)));
+  follow(wx, wy, worldW, worldH) {
+    this.x = Math.round(Math.max(0, Math.min(worldW - LOGICAL_W, wx - LOGICAL_W / 2)));
+    this.y = Math.round(Math.max(0, Math.min(worldH - LOGICAL_H, wy - LOGICAL_H / 2)));
   },
 
-  // World → screen
-  toScreen(wx, wy) {
-    return [wx - this.x, wy - this.y];
-  },
+  toScreen(wx, wy) { return [wx - this.x, wy - this.y]; },
 
-  // True if an 8x8 tile at world pixel (wx, wy) is visible.
   isVisible(wx, wy, w = TILE_SIZE, h = TILE_SIZE) {
-    return wx + w > this.x &&
-           wx     < this.x + LOGICAL_W &&
-           wy + h > this.y &&
-           wy     < this.y + LOGICAL_H;
+    return wx + w > this.x && wx < this.x + LOGICAL_W &&
+           wy + h > this.y && wy < this.y + LOGICAL_H;
   },
 };
 
-// ============================================================
-// SECTION 7: TILEMAP SYSTEM
+// ================================================================
+// SECTION 9: SPATIAL HASH
 //
-// Three map layers stacked in draw order:
-//   LAYER_BG       — terrain (all cells filled; no culling needed beyond tile bounds)
-//   LAYER_OBJECTS  — decor sprites (trees, flowers; transparent tiles = null)
-//   LAYER_COLLISION— boolean array; true = solid tile
+// Maps world space into a fixed-size cell grid. Entities register
+// in all overlapping cells. Proximity queries touch only nearby cells,
+// not the entire entity list.
 //
-// drawTilemap computes the visible tile range directly from
-// camera position, avoiding any per-tile visibility test:
-//   firstCol = floor(camera.x / TILE_SIZE)
-//   lastCol  = ceil((camera.x + LOGICAL_W) / TILE_SIZE)
-//   (same for rows)
-// Only tiles within that range are iterated — O(screen tiles),
-// not O(world tiles). For a 40x36 world vs 20x18 screen this
-// halves iteration vs a naive full-world loop.
-// ============================================================
+// Cell size = 32px (4 tiles). For a 40×36 world → 10×9 = 90 cells.
+// Insert: O(k) where k = cells overlapped (usually 1–4).
+// Query:  O(k + results). Full list scan: O(entities) — avoided here.
+//
+// Usage: rebuild every frame after MovementSystem, then query in
+// DialogSystem and AI awareness checks.
+// ================================================================
+const spatialHash = (() => {
+  const CELL = 32;
+  let cells = new Map();
 
-const TILE_ANIMATIONS = {
-  water: { frames: ['water0','water1'], fps: 2 },
+  function key(cx, cy) { return (cx & 0xFFFF) << 16 | (cy & 0xFFFF); }
+
+  function clear() { cells.clear(); }
+
+  function insert(id, x, y, w = TILE_SIZE, h = TILE_SIZE) {
+    const x0 = Math.floor(x / CELL), y0 = Math.floor(y / CELL);
+    const x1 = Math.floor((x + w - 1) / CELL), y1 = Math.floor((y + h - 1) / CELL);
+    for (let cy = y0; cy <= y1; cy++) {
+      for (let cx = x0; cx <= x1; cx++) {
+        const k = key(cx, cy);
+        if (!cells.has(k)) cells.set(k, new Set());
+        cells.get(k).add(id);
+      }
+    }
+  }
+
+  function queryRect(x, y, w, h) {
+    const result = new Set();
+    const x0 = Math.floor(x / CELL), y0 = Math.floor(y / CELL);
+    const x1 = Math.floor((x + w - 1) / CELL), y1 = Math.floor((y + h - 1) / CELL);
+    for (let cy = y0; cy <= y1; cy++) {
+      for (let cx = x0; cx <= x1; cx++) {
+        const bucket = cells.get(key(cx, cy));
+        if (bucket) for (const id of bucket) result.add(id);
+      }
+    }
+    return result;
+  }
+
+  return { clear, insert, queryRect };
+})();
+
+// ================================================================
+// SECTION 10: WORLD STATE
+// Mutable per-scene globals. All collision and camera logic reads
+// from worldState so scene transitions only need to patch this object.
+// ================================================================
+const worldState = {
+  cols: 40, rows: 36,
+  get w() { return this.cols * TILE_SIZE; },
+  get h() { return this.rows * TILE_SIZE; },
+  layerBG:        null,
+  layerObjects:   null,
+  layerCollision: null,
+  currentScene:   'overworld',
+};
+
+// ================================================================
+// SECTION 11: SCENE DEFINITIONS
+//
+// Each scene builder returns { bg, objects, collision } map arrays.
+// SCENES[name].portals: [{ tileX, tileY, targetScene, targetTileX, targetTileY }]
+// Portal is detected when the player's tile position matches tileX/tileY.
+// NPC entries are spawned as entities on scene load, destroyed on unload.
+// ================================================================
+
+function buildOverworld(cols, rows) {
+  const bg  = Array.from({length: rows}, () => Array(cols).fill('grass'));
+  const obj = Array.from({length: rows}, () => Array(cols).fill(null));
+  const col = Array.from({length: rows}, () => Array(cols).fill(false));
+
+  // Water lake
+  for (let r = 4; r <= 6; r++)
+    for (let c = 5; c <= 9; c++) { bg[r][c] = 'water'; col[r][c] = true; }
+
+  // Stone plaza
+  for (let r = 9; r <= 11; r++)
+    for (let c = 6; c <= 10; c++) bg[r][c] = 'stone';
+
+  // Walled enclosure (rows 20-25, cols 15-22)
+  for (let r = 20; r <= 25; r++)
+    for (let c = 15; c <= 22; c++)
+      if (r === 20 || r === 25 || c === 15 || c === 22)
+        { obj[r][c] = 'wall'; col[r][c] = true; }
+
+  // Trees
+  [[1,1],[1,4],[2,8],[3,18],[6,14],[0,12],[9,25],[11,28],[16,5],[13,8],[22,2],[24,6],
+   [5,32],[12,38],[20,30],[28,5],[30,12],[32,20],[25,35]].forEach(([r,c]) => {
+    if (r < rows && c < cols) { obj[r][c] = 'tree'; col[r][c] = true; }
+  });
+
+  // Flowers
+  [[3,3],[4,12],[7,3],[8,18],[13,7],[19,12],[22,28],[28,15]].forEach(([r,c]) => {
+    if (r < rows && c < cols) obj[r][c] = 'flower';
+  });
+
+  // Portal to cave
+  obj[8][35] = 'portal';
+
+  return { bg, objects: obj, collision: col };
+}
+
+function buildCave(cols, rows) {
+  const bg  = Array.from({length: rows}, (_, r) =>
+    Array.from({length: cols}, (_, c) =>
+      (r === 0 || r === rows-1 || c === 0 || c === cols-1) ? 'cave_wall' : 'cave_floor'
+    )
+  );
+  const obj = Array.from({length: rows}, () => Array(cols).fill(null));
+  const col = Array.from({length: rows}, (_, r) =>
+    Array.from({length: cols}, (_, c) =>
+      r === 0 || r === rows-1 || c === 0 || c === cols-1
+    )
+  );
+
+  // Inner chamber (rows 4-12, cols 5-14), doorways at row 8 on each side
+  for (let r = 4; r <= 12; r++) {
+    for (let c = 5; c <= 14; c++) {
+      if ((r === 4 || r === 12 || c === 5 || c === 14) &&
+          !(r === 8 && (c === 5 || c === 14))) {
+        bg[r][c]  = 'cave_wall';
+        col[r][c] = true;
+      }
+    }
+  }
+
+  // Crystal decorations
+  [[2,5],[2,10],[2,16],[16,3],[16,10],[16,16],[6,8],[9,11],[7,2],[14,17]].forEach(([r,c]) => {
+    if (r < rows && c < cols && !col[r][c]) obj[r][c] = 'crystal';
+  });
+
+  // Portal back to overworld (tile 1, 8)
+  obj[8][1]  = 'portal';
+  col[8][1]  = false;
+  bg[8][0]   = 'cave_floor';
+  col[8][0]  = false; // allow reaching the portal at col 1
+
+  return { bg, objects: obj, collision: col };
+}
+
+const SCENES = {
+  overworld: (() => {
+    const cols = 40, rows = 36;
+    const { bg, objects, collision } = buildOverworld(cols, rows);
+    return {
+      worldCols: cols, worldRows: rows,
+      bgColor:   0,
+      playerStart: { tileX: 15, tileY: 15 },
+      music: 'overworld',
+      layerBG: bg, layerObjects: objects, layerCollision: collision,
+      portals: [
+        { tileX: 35, tileY: 8, targetScene: 'cave', targetTileX: 3, targetTileY: 8 }
+      ],
+      npcs: [
+        {
+          tileX: 12, tileY: 12, sprite: 'npc_a', name: 'VILLAGER',
+          dialog: [
+            'GREETINGS, TRAVELER!\nWELCOME TO OUR VILLAGE.',
+            'THE CRYSTAL CAVE LIES\nTO THE EAST. A GLOWING\nPORTAL MARKS THE WAY.',
+            'FEW WHO ENTER RETURN\nTO TELL THE TALE...',
+          ],
+          patrol: {
+            speed: 20, waypointIdx: 0,
+            waypoints: [{x:12*8,y:12*8},{x:15*8,y:12*8},{x:15*8,y:15*8},{x:12*8,y:15*8}],
+          }
+        },
+        {
+          tileX: 7, tileY: 10, sprite: 'npc_b', name: 'SCHOLAR',
+          dialog: [
+            'AH, A NEW FACE!',
+            'PRESS Z NEAR ANY NPC\nTO SPEAK WITH THEM.',
+            'PRESS F5 TO SAVE.\nPRESS F9 TO LOAD.',
+          ],
+          patrol: null,
+        }
+      ],
+    };
+  })(),
+
+  cave: (() => {
+    const cols = 20, rows = 18;
+    const { bg, objects, collision } = buildCave(cols, rows);
+    return {
+      worldCols: cols, worldRows: rows,
+      bgColor:   30, // very dark blue
+      playerStart: { tileX: 3, tileY: 8 },
+      music: 'cave',
+      layerBG: bg, layerObjects: objects, layerCollision: collision,
+      portals: [
+        { tileX: 1, tileY: 8, targetScene: 'overworld', targetTileX: 34, targetTileY: 8 }
+      ],
+      npcs: [
+        {
+          tileX: 12, tileY: 8, sprite: 'npc_b', name: 'CAVE SAGE',
+          dialog: [
+            'YOU HAVE ENTERED THE\nCRYSTAL CAVE.',
+            'THE CRYSTALS HERE HAVE\nPULSED FOR CENTURIES.',
+            'RETURN THE WAY YOU\nCAME TO LEAVE.\nSAFE TRAVELS.',
+          ],
+          patrol: null,
+        }
+      ],
+    };
+  })(),
+};
+
+// ================================================================
+// SECTION 12: TILEMAP RENDERING
+// ================================================================
+const TILE_ANIMS = {
+  water:  { frames: ['water0','water1'], fps: 2 },
 };
 
 function resolveSprite(name, elapsed) {
-  const anim = TILE_ANIMATIONS[name];
+  const anim = TILE_ANIMS[name];
   if (!anim) return name;
   return anim.frames[Math.floor(elapsed * anim.fps) % anim.frames.length];
 }
 
 function drawTilemap(layer, elapsed = 0) {
-  const colStart = Math.max(0, Math.floor(camera.x / TILE_SIZE));
-  const colEnd   = Math.min(WORLD_COLS, Math.ceil((camera.x + LOGICAL_W) / TILE_SIZE));
-  const rowStart = Math.max(0, Math.floor(camera.y / TILE_SIZE));
-  const rowEnd   = Math.min(WORLD_ROWS, Math.ceil((camera.y + LOGICAL_H) / TILE_SIZE));
+  const {cols, rows} = worldState;
+  const cStart = Math.max(0, Math.floor(camera.x / TILE_SIZE));
+  const cEnd   = Math.min(cols, Math.ceil((camera.x + LOGICAL_W) / TILE_SIZE));
+  const rStart = Math.max(0, Math.floor(camera.y / TILE_SIZE));
+  const rEnd   = Math.min(rows, Math.ceil((camera.y + LOGICAL_H) / TILE_SIZE));
 
-  for (let row = rowStart; row < rowEnd; row++) {
-    for (let col = colStart; col < colEnd; col++) {
-      const cell = layer[row] ? layer[row][col] : null;
+  for (let row = rStart; row < rEnd; row++) {
+    for (let col = cStart; col < cEnd; col++) {
+      const cell = layer[row]?.[col];
       if (!cell) continue;
-      const name = resolveSprite(cell, elapsed);
-      const buf  = spriteCache[name];
+      const buf = spriteCache[resolveSprite(cell, elapsed)];
       if (!buf) continue;
       const [sx, sy] = camera.toScreen(col * TILE_SIZE, row * TILE_SIZE);
       blitBuffer(buf, sx, sy);
@@ -480,120 +754,64 @@ function drawTilemap(layer, elapsed = 0) {
   }
 }
 
-// ============================================================
-// SECTION 8: COLLISION LAYER & AABB RESOLUTION
+// ================================================================
+// SECTION 13: COLLISION (AABB, axis-separated)
 //
-// LAYER_COLLISION: 2D boolean array — true = solid.
-// Solid tiles block the player's hitbox.
+// Player hitbox: 6×4 px, offset (1, 4) from sprite top-left (feet area).
+// Axis-separated resolution: test X independently from Y.
+// This prevents "diagonal wall sticking" that combined-axis tests cause.
 //
-// AABB resolution (axis-separated):
-//   Given current position and desired new position:
-//   1. Move only on X. Test all four corners of the hitbox at
-//      the new X position against solid tiles. If any corner
-//      is in a solid tile, cancel X movement.
-//   2. Move only on Y. Same test. Cancel Y if blocked.
-//   Separating axes prevents the player from sticking at
-//   diagonal wall junctions.
-//
-// Player hitbox: 6x6 px, offset (1, 2) from sprite top-left.
-// This is smaller than the 8x8 sprite to allow slight tile overlap
-// for visual comfort (feet under grass edges etc).
-//
-// isSolid(tx, ty): checks the collision map.
-// collidesAt(worldX, worldY): tests all four hitbox corners.
-// resolveMove(entity, dx, dy): returns new {x,y} after resolution.
-// ============================================================
+// isSolid reads from worldState.layerCollision so it automatically
+// reflects the active scene after a loadScene() call.
+// ================================================================
+const HBX = 1, HBY = 4, HBW = 6, HBH = 4;
 
-// True if tile (tx, ty) in world coordinates is solid.
 function isSolid(tx, ty) {
-  if (tx < 0 || ty < 0 || tx >= WORLD_COLS || ty >= WORLD_ROWS) return true;
-  return !!(LAYER_COLLISION[ty] && LAYER_COLLISION[ty][tx]);
+  if (tx < 0 || ty < 0 || tx >= worldState.cols || ty >= worldState.rows) return true;
+  return !!(worldState.layerCollision[ty]?.[tx]);
 }
 
-// Hitbox constants (relative to entity's world-space top-left).
-const HB_OFFSET_X = 1;  // hitbox left edge from sprite left
-const HB_OFFSET_Y = 4;  // hitbox top edge from sprite top (feet area)
-const HB_W        = 6;  // hitbox width
-const HB_H        = 4;  // hitbox height
-
-// Test all four hitbox corners at a given world position.
 function collidesAt(wx, wy) {
-  const x0 = wx + HB_OFFSET_X;
-  const y0 = wy + HB_OFFSET_Y;
-  const x1 = x0 + HB_W - 1;
-  const y1 = y0 + HB_H - 1;
-
-  return isSolid(Math.floor(x0 / TILE_SIZE), Math.floor(y0 / TILE_SIZE)) ||
-         isSolid(Math.floor(x1 / TILE_SIZE), Math.floor(y0 / TILE_SIZE)) ||
-         isSolid(Math.floor(x0 / TILE_SIZE), Math.floor(y1 / TILE_SIZE)) ||
-         isSolid(Math.floor(x1 / TILE_SIZE), Math.floor(y1 / TILE_SIZE));
+  const x0 = wx + HBX, y0 = wy + HBY;
+  const x1 = x0 + HBW - 1, y1 = y0 + HBH - 1;
+  return isSolid(x0 / TILE_SIZE | 0, y0 / TILE_SIZE | 0) ||
+         isSolid(x1 / TILE_SIZE | 0, y0 / TILE_SIZE | 0) ||
+         isSolid(x0 / TILE_SIZE | 0, y1 / TILE_SIZE | 0) ||
+         isSolid(x1 / TILE_SIZE | 0, y1 / TILE_SIZE | 0);
 }
 
-// Attempt move by (dx, dy) from (wx, wy). Resolve axis-by-axis.
 function resolveMove(wx, wy, dx, dy) {
-  let nx = wx + dx;
-  let ny = wy + dy;
-
-  // Clamp to world bounds first.
-  nx = Math.max(0, Math.min(WORLD_W - TILE_SIZE, nx));
-  ny = Math.max(0, Math.min(WORLD_H - TILE_SIZE, ny));
-
-  // Try X move.
-  if (!collidesAt(nx, wy)) {
-    wx = nx;
-  }
-  // Try Y move (from resolved X).
-  if (!collidesAt(wx, ny)) {
-    wy = ny;
-  }
-
-  return { x: wx, y: wy };
+  const nx = Math.max(0, Math.min(worldState.w - TILE_SIZE, wx + dx));
+  const ny = Math.max(0, Math.min(worldState.h - TILE_SIZE, wy + dy));
+  const ax = collidesAt(nx, wy) ? wx : nx;
+  const ay = collidesAt(ax, ny) ? wy : ny;
+  return { x: ax, y: ay };
 }
 
-// ============================================================
-// SECTION 9: SPRITE ANIMATION SYSTEM
+// ================================================================
+// SECTION 14: ANIMATION SYSTEM
 //
-// An Animator component defines named animation clips.
-// Each clip: { frames: [spriteName,...], durations: [seconds,...] }
-// durations[i] = how long frame i is shown. Can be uniform or per-frame.
-//
-// Animator state: { current, frameIdx, timer, flipX, flipY }
-//
-// animatorUpdate(anim, delta): advances timer, wraps frame.
-// animatorSprite(anim): returns the current sprite name.
-//
-// Attaching to an entity: entity has a component 'animator'.
-// The AnimationSystem iterates all entities with [animator] and
-// calls animatorUpdate on each.
-// ============================================================
-
+// Animator: { clips, current, frameIdx, timer, flipX, flipY }
+// Clips: { [name]: { frames: [spriteName,...], durations: number|number[] } }
+// durations is seconds per frame (scalar = uniform, array = per-frame).
+// animatorPlay() is safe to call every frame; only resets on clip change.
+// ================================================================
 function createAnimator(clips, initial = Object.keys(clips)[0]) {
-  return {
-    clips,
-    current:  initial,
-    frameIdx: 0,
-    timer:    0,
-    flipX:    false,
-    flipY:    false,
-  };
+  return { clips, current: initial, frameIdx: 0, timer: 0, flipX: false, flipY: false };
 }
 
-function animatorPlay(anim, clipName) {
-  if (anim.current === clipName) return;
-  anim.current  = clipName;
-  anim.frameIdx = 0;
-  anim.timer    = 0;
+function animatorPlay(anim, clip) {
+  if (anim.current === clip) return;
+  anim.current = clip; anim.frameIdx = 0; anim.timer = 0;
 }
 
 function animatorUpdate(anim, delta) {
   const clip = anim.clips[anim.current];
-  if (!clip || clip.frames.length === 0) return;
-
+  if (!clip?.frames.length) return;
   anim.timer += delta;
   const dur = Array.isArray(clip.durations)
     ? (clip.durations[anim.frameIdx] ?? clip.durations[0])
     : clip.durations;
-
   if (anim.timer >= dur) {
     anim.timer -= dur;
     anim.frameIdx = (anim.frameIdx + 1) % clip.frames.length;
@@ -601,140 +819,521 @@ function animatorUpdate(anim, delta) {
 }
 
 function animatorSprite(anim) {
-  const clip = anim.clips[anim.current];
-  if (!clip) return null;
-  return clip.frames[anim.frameIdx] || null;
+  return anim.clips[anim.current]?.frames[anim.frameIdx] ?? null;
 }
 
-// ============================================================
-// SECTION 10: ENTITY / COMPONENT SYSTEM (ECS)
+// Shared animation clip sets — avoids re-defining per entity.
+const CLIPS_PLAYER = {
+  idle:      { frames: ['player_idle'],           durations: 0.2  },
+  walk_down: { frames: ['player_d0','player_d1'], durations: 0.18 },
+  walk_up:   { frames: ['player_u0','player_u1'], durations: 0.18 },
+  walk_side: { frames: ['player_s0','player_s1'], durations: 0.18 },
+};
+const CLIPS_NPC = {
+  idle:      { frames: ['npc_a'],           durations: 0.3 },
+  walk_down: { frames: ['npc_a'],           durations: 0.3 },
+  walk_up:   { frames: ['npc_a'],           durations: 0.3 },
+  walk_side: { frames: ['npc_a'],           durations: 0.3 },
+};
+function makeNpcClips(s) {
+  return { idle:{frames:[s],durations:0.4}, walk_down:{frames:[s],durations:0.3},
+           walk_up:{frames:[s],durations:0.3}, walk_side:{frames:[s],durations:0.3} };
+}
+
+// ================================================================
+// SECTION 15: ECS
 //
-// Architecture (minimalist but extensible):
+// Entity = integer ID. Component = plain object stored in a Map.
+// world.query(...names) returns IDs with ALL listed components.
+// Complexity: O(entities) — acceptable for small counts (<100).
+// For hundreds of entities, replace with archetype/bitmask storage.
 //
-// Entity   = a plain integer ID. No class, no methods.
-// Component= any plain object stored in a Map keyed by component name.
-//            Components are data only — no logic.
-// System   = a function that queries for entities with specific
-//            components and operates on them.
-//
-// World:
-//   createEntity(components)  → id
-//   destroyEntity(id)
-//   addComponent(id, name, data)
-//   getComponent(id, name)    → data | undefined
-//   hasComponent(id, name)    → bool
-//   query(...names)           → id[] of entities that have ALL names
-//
-// Systems are registered as functions and called in order each frame.
-// Each system receives (delta, elapsed) and calls world.query() internally.
-//
-// Why plain IDs + Maps instead of class instances per entity:
-//   - Components can be added/removed at runtime without restructuring
-//   - Systems operate on arbitrary entity sets — no inheritance coupling
-//   - Trivial serialization: components are plain objects
-//
-// Tradeoff vs class-per-entity:
-//   - No cache locality (Map lookups vs struct array)
-//   - More boilerplate for simple games
-//   - Justified when entity behavior is heterogeneous or data-driven
-// ============================================================
+// 'persistent' component = survives scene transitions.
+// All others are destroyed by clearSceneEntities().
+// ================================================================
 const world = (() => {
   let nextId = 0;
-  const components = new Map(); // id → { [componentName]: data }
-  const entities   = new Set();
+  const store    = new Map(); // id → { [name]: data }
+  const entities = new Set();
 
   return {
     createEntity(comps = {}) {
       const id = nextId++;
       entities.add(id);
-      components.set(id, { ...comps });
+      store.set(id, { ...comps });
       return id;
     },
-
     destroyEntity(id) {
       entities.delete(id);
-      components.delete(id);
+      store.delete(id);
     },
-
-    addComponent(id, name, data) {
-      if (!components.has(id)) return;
-      components.get(id)[name] = data;
-    },
-
-    getComponent(id, name) {
-      return components.get(id)?.[name];
-    },
-
-    hasComponent(id, name) {
-      return !!(components.get(id)?.[name] !== undefined);
-    },
-
-    // Returns all entity IDs that have every listed component name.
+    get(id, name)       { return store.get(id)?.[name]; },
+    set(id, name, data) { if (store.has(id)) store.get(id)[name] = data; },
+    has(id, name)       { return store.get(id)?.[name] !== undefined; },
     query(...names) {
-      const result = [];
+      const out = [];
       for (const id of entities) {
-        const comps = components.get(id);
-        if (names.every(n => comps[n] !== undefined)) result.push(id);
+        const c = store.get(id);
+        if (names.every(n => c[n] !== undefined)) out.push(id);
       }
-      return result;
+      return out;
     },
-
-    all: entities,
+    get allIds() { return entities; },
   };
 })();
 
-// ============================================================
-// SECTION 11: SYSTEMS
+// ================================================================
+// SECTION 16: INPUT
+// ================================================================
+const ACTION_MAP = {
+  up:     { keys: ['ArrowUp',   'KeyW'],  gpButtons: [12] },
+  down:   { keys: ['ArrowDown', 'KeyS'],  gpButtons: [13] },
+  left:   { keys: ['ArrowLeft', 'KeyA'],  gpButtons: [14] },
+  right:  { keys: ['ArrowRight','KeyD'],  gpButtons: [15] },
+  action: { keys: ['KeyZ','Space'],        gpButtons: [0]  },
+  cancel: { keys: ['KeyX','Escape'],       gpButtons: [1]  },
+};
+
+const input = (() => {
+  const down = new Set(), pressed = new Set(), released = new Set();
+  const snap = { held: {}, pressed: {}, released: {}, axis: { x: 0, y: 0 } };
+
+  window.addEventListener('keydown', e => {
+    if (!down.has(e.code)) pressed.add(e.code);
+    down.add(e.code);
+    if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code))
+      e.preventDefault();
+  });
+  window.addEventListener('keyup', e => {
+    down.delete(e.code); released.add(e.code);
+  });
+
+  return {
+    update() {
+      const gp = [...(navigator.getGamepads?.() || [])].find(g => g?.connected);
+      snap.axis.x = gp && Math.abs(gp.axes[0]) > 0.15 ? gp.axes[0] : 0;
+      snap.axis.y = gp && Math.abs(gp.axes[1]) > 0.15 ? gp.axes[1] : 0;
+      for (const [a, m] of Object.entries(ACTION_MAP)) {
+        const gpH = gp ? m.gpButtons.some(b => gp.buttons[b]?.pressed) : false;
+        snap.held[a]     = m.keys.some(k => down.has(k)) || gpH;
+        snap.pressed[a]  = m.keys.some(k => pressed.has(k)) || (gpH && !snap.held[a+'_p']);
+        snap.released[a] = m.keys.some(k => released.has(k));
+        snap.held[a+'_p'] = gpH;
+      }
+      pressed.clear(); released.clear();
+    },
+    held:     a => !!snap.held[a],
+    pressed:  a => !!snap.pressed[a],
+    released: a => !!snap.released[a],
+    axis:     () => snap.axis,
+  };
+})();
+
+// ================================================================
+// SECTION 17: SOUND ENGINE
 //
-// Each system is a function(delta, elapsed).
-// Called in order: Input → AI → Movement → Animation → Render.
-// ============================================================
+// Notation: space-separated tokens "NOTE[OCTAVE]:BEATS" or "R:BEATS".
+// Notes: C C# D D# E F F# G G# A A# B  (sharps only, no flats).
+// Octave: integer (4 = middle octave, A4 = 440 Hz).
+// Beats: float, duration = beats * (60 / bpm) seconds.
+//
+// Instruments: 'square' | 'triangle' | 'sine' | 'sawtooth'
+// Each note = OscillatorNode → GainNode (ADSR envelope) → masterGain.
+//
+// BGM: schedules all channels, uses setTimeout to re-schedule loop.
+//   Tracks currently playing are stored so stopBGM can halt them.
+// SFX: fire-and-forget, no tracking needed.
+//
+// AudioContext is created lazily on first keydown (browser policy).
+// ================================================================
+const NOTE_FREQ_BASE = {
+  'C':261.63,'C#':277.18,'D':293.66,'D#':311.13,'E':329.63,
+  'F':349.23,'F#':369.99,'G':392.00,'G#':415.30,'A':440.00,
+  'A#':466.16,'B':493.88,
+};
 
-// --- InputSystem ---
-// Reads input snapshot, drives the player entity's velocity and animator.
-function InputSystem(delta) {
-  const ids = world.query('player', 'transform', 'velocity', 'animator');
-  for (const id of ids) {
-    const vel  = world.getComponent(id, 'velocity');
-    const anim = world.getComponent(id, 'animator');
+function noteToHz(note, octave) {
+  return (NOTE_FREQ_BASE[note] ?? 440) * Math.pow(2, octave - 4);
+}
 
-    let dx = 0, dy = 0;
-    const ax = input.axis();
-    if (input.held('left')  || ax.x < -0.15) dx = -1;
-    if (input.held('right') || ax.x >  0.15) dx =  1;
-    if (input.held('up')    || ax.y < -0.15) dy = -1;
-    if (input.held('down')  || ax.y >  0.15) dy =  1;
+function parseNotes(str) {
+  return str.trim().split(/\s+/).map(tok => {
+    const [n, b] = tok.split(':');
+    const beats  = parseFloat(b);
+    if (n === 'R') return { rest: true, beats };
+    const sharp = n[1] === '#';
+    const note  = sharp ? n.slice(0, 2) : n[0];
+    const oct   = parseInt(sharp ? n[2] : n[1]);
+    return { note, oct, beats };
+  });
+}
 
-    vel.dx = dx * vel.speed;
-    vel.dy = dy * vel.speed;
+const MUSIC_TRACKS = {
+  overworld: {
+    bpm: 140, loop: true,
+    channels: [
+      { instrument: 'square',
+        notes: 'E5:0.5 G5:0.5 A5:1 E5:0.5 G5:0.5 B5:1 A5:0.5 G5:0.5 A5:0.5 E5:0.5 D5:2 R:1 C5:0.5 E5:0.5 G5:0.5 A5:1 F5:0.5 E5:0.5 D5:0.5 C5:0.5 E5:2 R:1' },
+      { instrument: 'triangle',
+        notes: 'A3:2 A3:2 F3:2 G3:2 A3:2 A3:2 G3:2 E3:2 C3:2 E3:2 F3:2 G3:2 A3:4' },
+    ]
+  },
+  cave: {
+    bpm: 70, loop: true,
+    channels: [
+      { instrument: 'sine',
+        notes: 'A3:2 R:1 G3:1 F3:2 R:1 E3:1 D3:2 R:2 A2:4 R:2 E3:2 R:2 F3:2 R:2' },
+      { instrument: 'triangle',
+        notes: 'A2:4 R:4 F2:4 R:4 G2:4 R:4 A2:8 R:4' },
+    ]
+  },
+};
 
-    // Drive animator based on movement direction.
-    if (dx !== 0 || dy !== 0) {
-      if      (dy > 0)  { animatorPlay(anim, 'walk_down');  anim.flipX = false; }
-      else if (dy < 0)  { animatorPlay(anim, 'walk_up');    anim.flipX = false; }
-      else if (dx < 0)  { animatorPlay(anim, 'walk_side');  anim.flipX = true;  }
-      else if (dx > 0)  { animatorPlay(anim, 'walk_side');  anim.flipX = false; }
-    } else {
-      animatorPlay(anim, 'idle');
+const SFX = {
+  confirm: { bpm:960, channels:[{ instrument:'square',   notes:'C5:0.1 E5:0.1 G5:0.2' }] },
+  dialog:  { bpm:960, channels:[{ instrument:'square',   notes:'C6:0.05' }] },
+  portal:  { bpm:480, channels:[{ instrument:'sine',     notes:'A4:0.1 C#5:0.1 E5:0.1 A5:0.2 R:0.1 A6:0.3' }] },
+  save:    { bpm:960, channels:[{ instrument:'square',   notes:'G5:0.08 B5:0.08 D6:0.08 G6:0.15' }] },
+  cancel:  { bpm:960, channels:[{ instrument:'triangle', notes:'E5:0.1 C5:0.1' }] },
+};
+
+const sound = (() => {
+  let ctx = null, masterGain = null;
+  let bgmNodes = [], bgmTimer = null, bgmCurrent = null;
+
+  function init() {
+    if (ctx) { if (ctx.state === 'suspended') ctx.resume(); return; }
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+    masterGain = ctx.createGain();
+    masterGain.gain.value = 0.12;
+    masterGain.connect(ctx.destination);
+  }
+
+  function scheduleTrack(track, t0) {
+    const beat = 60 / track.bpm;
+    const nodes = [];
+    let maxEnd = t0;
+
+    for (const ch of track.channels) {
+      const parsed = parseNotes(ch.notes);
+      let t = t0;
+      for (const n of parsed) {
+        const dur = n.beats * beat;
+        if (!n.rest && ctx) {
+          const osc  = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = ch.instrument;
+          osc.frequency.value = noteToHz(n.note, n.oct);
+          const att = 0.01, rel = Math.min(0.05, dur * 0.25);
+          gain.gain.setValueAtTime(0, t);
+          gain.gain.linearRampToValueAtTime(0.7, t + att);
+          gain.gain.setValueAtTime(0.7, t + dur - rel);
+          gain.gain.linearRampToValueAtTime(0, t + dur);
+          osc.connect(gain);
+          gain.connect(masterGain);
+          osc.start(t);
+          osc.stop(t + dur + 0.01);
+          nodes.push(osc);
+        }
+        t += dur;
+      }
+      maxEnd = Math.max(maxEnd, t);
+    }
+    return { nodes, duration: maxEnd - t0 };
+  }
+
+  function stopBGM() {
+    clearTimeout(bgmTimer);
+    for (const n of bgmNodes) try { n.stop(0); } catch(e) {}
+    bgmNodes = []; bgmCurrent = null;
+  }
+
+  function playBGM(name) {
+    if (!ctx || bgmCurrent === name) return;
+    stopBGM();
+    const track = MUSIC_TRACKS[name];
+    if (!track) return;
+    bgmCurrent = name;
+
+    function loop() {
+      if (bgmCurrent !== name) return;
+      const { nodes, duration } = scheduleTrack(track, ctx.currentTime + 0.05);
+      bgmNodes.push(...nodes);
+      if (track.loop) bgmTimer = setTimeout(loop, Math.max(0, (duration - 0.2) * 1000));
+    }
+    loop();
+  }
+
+  function playSFX(name) {
+    if (!ctx) return;
+    const sfx = SFX[name];
+    if (sfx) scheduleTrack(sfx, ctx.currentTime + 0.01);
+  }
+
+  function setVolume(v) { if (masterGain) masterGain.gain.value = Math.max(0, Math.min(1, v)); }
+
+  return { init, playBGM, stopBGM, playSFX, setVolume };
+})();
+
+// Init audio on any keypress (required by browser autoplay policy).
+window.addEventListener('keydown', () => sound.init(), { capture: true });
+document.addEventListener('pointerdown', () => sound.init(), { once: true });
+
+// ================================================================
+// SECTION 18: SCENE MANAGER
+//
+// loadScene(name): destroys all non-persistent entities, patches
+// worldState with new scene dimensions and map arrays, creates new
+// NPC entities, repositions player, starts scene music, resets camera.
+//
+// Transition: fade-to-black via frameBuffer overlay + ctx alpha rect.
+// States: 'none' | 'out' | 'swap' | 'in'.
+// The swap happens at the midpoint (alpha = 1.0).
+// ================================================================
+let playerId = -1; // set during entity init
+
+const sceneTransition = {
+  state: 'none',   // 'none' | 'out' | 'in'
+  alpha: 0,
+  speed: 3,        // alpha units per second
+  pendingScene: '',
+  pendingX: 0, pendingY: 0,
+};
+
+const sceneNpcIds = []; // scene-local entities, cleared on transition
+
+function clearSceneEntities() {
+  for (const id of [...world.allIds]) {
+    if (!world.has(id, 'persistent')) {
+      world.destroyEntity(id);
+    }
+  }
+  sceneNpcIds.length = 0;
+}
+
+function spawnSceneNpcs(scene) {
+  for (const def of (scene.npcs || [])) {
+    const clips = makeNpcClips(def.sprite);
+    const id = world.createEntity({
+      transform: { x: def.tileX * TILE_SIZE, y: def.tileY * TILE_SIZE },
+      velocity:  { dx: 0, dy: 0, speed: def.patrol?.speed ?? 0 },
+      animator:  createAnimator(clips, 'idle'),
+      collider:  true,
+      npcData:   { name: def.name, dialogLines: def.dialog },
+      ...(def.patrol ? { patrol: { ...def.patrol } } : {}),
+    });
+    sceneNpcIds.push(id);
+  }
+}
+
+function loadScene(name, px = null, py = null) {
+  const scene = SCENES[name];
+  if (!scene) { console.warn('Unknown scene:', name); return; }
+
+  clearSceneEntities();
+
+  worldState.cols         = scene.worldCols;
+  worldState.rows         = scene.worldRows;
+  worldState.layerBG      = scene.layerBG;
+  worldState.layerObjects = scene.layerObjects;
+  worldState.layerCollision = scene.layerCollision;
+  worldState.currentScene = name;
+
+  const ptf = world.get(playerId, 'transform');
+  if (ptf) {
+    ptf.x = px ?? scene.playerStart.tileX * TILE_SIZE;
+    ptf.y = py ?? scene.playerStart.tileY * TILE_SIZE;
+  }
+
+  spawnSceneNpcs(scene);
+  camera.x = 0; camera.y = 0; // camera will snap next CameraSystem tick
+  sound.playBGM(scene.music);
+}
+
+function startTransition(targetScene, targetX, targetY) {
+  if (sceneTransition.state !== 'none') return;
+  sceneTransition.state       = 'out';
+  sceneTransition.alpha       = 0;
+  sceneTransition.pendingScene = targetScene;
+  sceneTransition.pendingX     = targetX;
+  sceneTransition.pendingY     = targetY;
+  sound.playSFX('portal');
+}
+
+function updateTransition(delta) {
+  const t = sceneTransition;
+  if (t.state === 'none') return;
+
+  if (t.state === 'out') {
+    t.alpha += t.speed * delta;
+    if (t.alpha >= 1) {
+      t.alpha = 1;
+      loadScene(t.pendingScene, t.pendingX, t.pendingY);
+      t.state = 'in';
+    }
+  } else if (t.state === 'in') {
+    t.alpha -= t.speed * delta;
+    if (t.alpha <= 0) {
+      t.alpha = 0;
+      t.state = 'none';
     }
   }
 }
 
-// --- AISystem ---
-// Simple patrol AI for NPC entities.
-// Each NPC has a 'patrol' component: { waypoints, waypointIdx, speed }
-function AISystem(delta) {
-  const ids = world.query('transform', 'velocity', 'patrol', 'animator');
-  for (const id of ids) {
-    const tf      = world.getComponent(id, 'transform');
-    const vel     = world.getComponent(id, 'velocity');
-    const patrol  = world.getComponent(id, 'patrol');
-    const anim    = world.getComponent(id, 'animator');
+function renderTransitionOverlay() {
+  if (sceneTransition.state === 'none' || sceneTransition.alpha <= 0) return;
+  ctx.fillStyle = `rgba(0,0,0,${sceneTransition.alpha.toFixed(2)})`;
+  ctx.fillRect(0, 0, LOGICAL_W, LOGICAL_H);
+}
 
-    const target  = patrol.waypoints[patrol.waypointIdx];
-    const dx      = target.x - tf.x;
-    const dy      = target.y - tf.y;
-    const dist    = Math.sqrt(dx * dx + dy * dy);
+// ================================================================
+// SECTION 19: DIALOG STATE & RENDERING
+// ================================================================
+const dialog = {
+  active: false,
+  lines: [],     // array of page strings (may contain \n)
+  page:  0,
+  name:  '',
+};
+
+function renderDialog() {
+  if (!dialog.active) return;
+  const bx = 8, by = LOGICAL_H - 54, bw = LOGICAL_W - 16, bh = 48;
+  drawBox(bx, by, bw, bh, 1, 20);
+
+  // Name badge
+  if (dialog.name) {
+    fillRectPx(bx + 3, by - 10, dialog.name.length * CHAR_W + 6, 11, 14);
+    fillRectPx(bx + 3, by - 10, dialog.name.length * CHAR_W + 6, 1, 21);
+    drawText(dialog.name, bx + 6, by - 8, 7);
+  }
+
+  // Text (current page)
+  drawText(dialog.lines[dialog.page] ?? '', bx + 5, by + 5, 20);
+
+  // Advance/close indicator (blinks)
+  if (Math.floor(elapsed * 3) % 2 === 0) {
+    const label = dialog.page < dialog.lines.length - 1 ? '>' : 'X';
+    drawText(label, bx + bw - 10, by + bh - 10, 21);
+  }
+}
+
+// ================================================================
+// SECTION 20: SAVE / LOAD
+//
+// Serialized state: current scene + player world pixel position.
+// Scene NPCs are not persisted; they're recreated from SCENES on load.
+// Extra data (quest flags, inventory) can be added to the payload object.
+//
+// localStorage wrapped in try/catch — fails gracefully in sandboxed
+// contexts (iframe with storage restrictions, private browsing, etc.).
+// ================================================================
+const SAVE_KEY = 'pixelCanvas_v4';
+
+const saveLoad = {
+  save() {
+    const ptf = world.get(playerId, 'transform');
+    if (!ptf) return false;
+    try {
+      localStorage.setItem(SAVE_KEY, JSON.stringify({
+        version: 1,
+        scene:   worldState.currentScene,
+        x: ptf.x | 0,
+        y: ptf.y | 0,
+      }));
+      return true;
+    } catch(e) { console.warn('Save failed:', e.message); return false; }
+  },
+  load() {
+    try {
+      const raw  = localStorage.getItem(SAVE_KEY);
+      if (!raw) return false;
+      const data = JSON.parse(raw);
+      if (data.version !== 1 || !SCENES[data.scene]) return false;
+      loadScene(data.scene, data.x, data.y);
+      return true;
+    } catch(e) { console.warn('Load failed:', e.message); return false; }
+  },
+  hasSave() {
+    try { return !!localStorage.getItem(SAVE_KEY); } catch(e) { return false; }
+  },
+};
+
+// Save notification (rendered in framebuffer)
+const saveNote = { text: '', timer: 0 };
+function showNote(msg, dur = 2.5) { saveNote.text = msg; saveNote.timer = dur; }
+function renderSaveNote() {
+  if (saveNote.timer <= 0) return;
+  const x = ((LOGICAL_W - textWidth(saveNote.text)) / 2) | 0;
+  fillRectPx(x - 3, 3, textWidth(saveNote.text) + 6, CHAR_H + 2, 1);
+  drawText(saveNote.text, x, 4, 7);
+}
+
+// Keyboard save/load
+window.addEventListener('keydown', e => {
+  if (e.code === 'F5') {
+    e.preventDefault();
+    sound.init();
+    if (saveLoad.save()) { sound.playSFX('save'); showNote('GAME SAVED!'); }
+    else showNote('SAVE FAILED');
+  }
+  if (e.code === 'F9') {
+    e.preventDefault();
+    sound.init();
+    if (saveLoad.load()) { sound.playSFX('confirm'); showNote('GAME LOADED!'); }
+    else showNote('NO SAVE FOUND');
+  }
+});
+
+// ================================================================
+// SECTION 21: SYSTEMS
+// Execution order: input.update → Input → AI → Movement →
+//   SpatialHash → Camera → SceneTransition → Animation → Dialog.
+// Render pass is separate (not in SYSTEMS array).
+// ================================================================
+
+// Drives player velocity and animation intent from input snapshot.
+function sysInput() {
+  if (dialog.active || sceneTransition.state !== 'none') {
+    const vel = world.get(playerId, 'velocity');
+    if (vel) { vel.dx = 0; vel.dy = 0; }
+    return;
+  }
+  const vel  = world.get(playerId, 'velocity');
+  const anim = world.get(playerId, 'animator');
+  if (!vel || !anim) return;
+
+  let dx = 0, dy = 0;
+  const ax = input.axis();
+  if (input.held('left')  || ax.x < -0.15) dx = -1;
+  if (input.held('right') || ax.x >  0.15) dx =  1;
+  if (input.held('up')    || ax.y < -0.15) dy = -1;
+  if (input.held('down')  || ax.y >  0.15) dy =  1;
+
+  vel.dx = dx * vel.speed;
+  vel.dy = dy * vel.speed;
+
+  if (dx !== 0 || dy !== 0) {
+    if      (dy > 0) { animatorPlay(anim, 'walk_down'); anim.flipX = false; }
+    else if (dy < 0) { animatorPlay(anim, 'walk_up');   anim.flipX = false; }
+    else if (dx < 0) { animatorPlay(anim, 'walk_side'); anim.flipX = true;  }
+    else             { animatorPlay(anim, 'walk_side'); anim.flipX = false; }
+  } else {
+    animatorPlay(anim, 'idle');
+  }
+}
+
+// Simple waypoint patrol AI.
+function sysAI(delta) {
+  for (const id of world.query('transform', 'velocity', 'patrol', 'animator')) {
+    const tf     = world.get(id, 'transform');
+    const vel    = world.get(id, 'velocity');
+    const patrol = world.get(id, 'patrol');
+    const anim   = world.get(id, 'animator');
+
+    const wp   = patrol.waypoints[patrol.waypointIdx];
+    const dx   = wp.x - tf.x, dy = wp.y - tf.y;
+    const dist = Math.sqrt(dx*dx + dy*dy);
 
     if (dist < 2) {
       patrol.waypointIdx = (patrol.waypointIdx + 1) % patrol.waypoints.length;
@@ -743,87 +1342,126 @@ function AISystem(delta) {
     } else {
       vel.dx = (dx / dist) * patrol.speed;
       vel.dy = (dy / dist) * patrol.speed;
-      if      (Math.abs(dy) > Math.abs(dx)) {
+      if (Math.abs(dy) > Math.abs(dx)) {
         animatorPlay(anim, dy > 0 ? 'walk_down' : 'walk_up');
       } else {
         animatorPlay(anim, 'walk_side');
-        const a = world.getComponent(id, 'animator');
-        if (a) a.flipX = dx < 0;
+        anim.flipX = dx < 0;
       }
     }
   }
 }
 
-// --- MovementSystem ---
-// Applies velocity with collision resolution for all collidable entities.
-function MovementSystem(delta) {
-  const ids = world.query('transform', 'velocity');
-  for (const id of ids) {
-    const tf  = world.getComponent(id, 'transform');
-    const vel = world.getComponent(id, 'velocity');
-
+// Apply velocity with AABB collision resolution.
+function sysMovement(delta) {
+  for (const id of world.query('transform', 'velocity')) {
+    const tf  = world.get(id, 'transform');
+    const vel = world.get(id, 'velocity');
     if (vel.dx === 0 && vel.dy === 0) continue;
 
-    const collidable = world.hasComponent(id, 'collider');
-    if (collidable) {
+    if (world.has(id, 'collider')) {
       const pos = resolveMove(tf.x, tf.y, vel.dx * delta, vel.dy * delta);
-      tf.x = pos.x;
-      tf.y = pos.y;
+      tf.x = pos.x; tf.y = pos.y;
     } else {
-      // Non-collidable entities (e.g. decorative) just clamp to world.
-      tf.x = Math.max(0, Math.min(WORLD_W - TILE_SIZE, tf.x + vel.dx * delta));
-      tf.y = Math.max(0, Math.min(WORLD_H - TILE_SIZE, tf.y + vel.dy * delta));
+      tf.x = Math.max(0, Math.min(worldState.w - TILE_SIZE, tf.x + vel.dx * delta));
+      tf.y = Math.max(0, Math.min(worldState.h - TILE_SIZE, tf.y + vel.dy * delta));
     }
   }
 }
 
-// --- AnimationSystem ---
-// Advances animator timers for all animated entities.
-function AnimationSystem(delta) {
-  const ids = world.query('animator');
-  for (const id of ids) {
-    animatorUpdate(world.getComponent(id, 'animator'), delta);
+// Rebuild spatial hash after movement.
+function sysSpatialHash() {
+  spatialHash.clear();
+  for (const id of world.query('transform')) {
+    const tf = world.get(id, 'transform');
+    spatialHash.insert(id, tf.x, tf.y);
   }
 }
 
-// --- CameraSystem ---
-// Follows the player entity.
-function CameraSystem() {
-  const ids = world.query('player', 'transform');
-  if (ids.length === 0) return;
-  const tf = world.getComponent(ids[0], 'transform');
-  camera.follow(tf.x + TILE_SIZE / 2, tf.y + TILE_SIZE / 2);
+// Follow player, respect world bounds.
+function sysCamera() {
+  const ptf = world.get(playerId, 'transform');
+  if (ptf) camera.follow(ptf.x + TILE_SIZE/2, ptf.y + TILE_SIZE/2, worldState.w, worldState.h);
 }
 
-// --- RenderSystem ---
-// Draws all entities with [transform + sprite | animator].
-// Entities with a 'sprite' component use a fixed sprite buffer.
-// Entities with an 'animator' component resolve the current frame.
-function RenderSystem(elapsed) {
-  const ids = world.query('transform');
-  for (const id of ids) {
-    const tf   = world.getComponent(id, 'transform');
-    const anim = world.getComponent(id, 'animator');
+// Advance all animator timers.
+function sysAnimation(delta) {
+  for (const id of world.query('animator')) {
+    animatorUpdate(world.get(id, 'animator'), delta);
+  }
+}
 
-    // Cull — is this entity's tile visible on screen?
+// Check portal overlaps + trigger transitions.
+// Called after Movement so player position is final for this frame.
+function sysSceneTransition() {
+  if (sceneTransition.state !== 'none' || dialog.active) return;
+  const ptf = world.get(playerId, 'transform');
+  if (!ptf) return;
+  const tx = ptf.x / TILE_SIZE | 0;
+  const ty = ptf.y / TILE_SIZE | 0;
+
+  const portals = SCENES[worldState.currentScene]?.portals ?? [];
+  for (const p of portals) {
+    if (tx === p.tileX && ty === p.tileY) {
+      startTransition(p.targetScene, p.targetTileX * TILE_SIZE, p.targetTileY * TILE_SIZE);
+      return;
+    }
+  }
+}
+
+// NPC proximity dialog trigger.
+function sysDialog() {
+  // Advance or close existing dialog
+  if (dialog.active) {
+    if (input.pressed('action') || input.pressed('cancel')) {
+      if (dialog.page < dialog.lines.length - 1 && input.pressed('action')) {
+        dialog.page++;
+        sound.playSFX('dialog');
+      } else {
+        dialog.active = false;
+        sound.playSFX('cancel');
+      }
+    }
+    return;
+  }
+
+  // Check proximity for new dialog (only on action press)
+  if (!input.pressed('action')) return;
+  const ptf = world.get(playerId, 'transform');
+  if (!ptf) return;
+
+  const nearby = spatialHash.queryRect(ptf.x - 12, ptf.y - 12, TILE_SIZE + 24, TILE_SIZE + 24);
+  for (const id of nearby) {
+    if (id === playerId) continue;
+    const npc = world.get(id, 'npcData');
+    if (npc) {
+      dialog.active = true;
+      dialog.lines  = npc.dialogLines;
+      dialog.name   = npc.name;
+      dialog.page   = 0;
+      sound.init();
+      sound.playSFX('dialog');
+      return;
+    }
+  }
+}
+
+// Render all entities with animator or sprite component.
+function sysRender() {
+  for (const id of world.query('transform')) {
+    const tf   = world.get(id, 'transform');
     if (!camera.isVisible(tf.x, tf.y)) continue;
 
-    let buf    = null;
-    let flipX  = false;
-    let flipY  = false;
+    const anim = world.get(id, 'animator');
+    let buf = null, flipX = false, flipY = false;
 
     if (anim) {
-      const spriteName = animatorSprite(anim);
-      buf   = spriteName ? spriteCache[spriteName] : null;
-      flipX = anim.flipX;
-      flipY = anim.flipY;
+      const sn = animatorSprite(anim);
+      buf = sn ? spriteCache[sn] : null;
+      flipX = anim.flipX; flipY = anim.flipY;
     } else {
-      const sp = world.getComponent(id, 'sprite');
-      if (sp) {
-        buf   = sp.buf || spriteCache[sp.name];
-        flipX = sp.flipX || false;
-        flipY = sp.flipY || false;
-      }
+      const sp = world.get(id, 'sprite');
+      if (sp) { buf = sp.buf || spriteCache[sp.name]; flipX = sp.flipX; }
     }
 
     if (!buf) continue;
@@ -832,266 +1470,82 @@ function RenderSystem(elapsed) {
   }
 }
 
-// ============================================================
-// SECTION 12: INPUT
-// (Identical to v2 — reproduced for self-containment.)
-// ============================================================
-const ACTION_MAP = {
-  up:     { keys: ['ArrowUp',    'KeyW'],  gamepadButtons: [12] },
-  down:   { keys: ['ArrowDown',  'KeyS'],  gamepadButtons: [13] },
-  left:   { keys: ['ArrowLeft',  'KeyA'],  gamepadButtons: [14] },
-  right:  { keys: ['ArrowRight', 'KeyD'],  gamepadButtons: [15] },
-  action: { keys: ['KeyZ','Space'],        gamepadButtons: [0]  },
-  cancel: { keys: ['KeyX','Escape'],       gamepadButtons: [1]  },
-};
-
-const input = (() => {
-  const keysDown     = new Set();
-  const keysPressed  = new Set();
-  const keysReleased = new Set();
-  const snap = { held: {}, pressed: {}, released: {}, axis: { x: 0, y: 0 } };
-
-  window.addEventListener('keydown', e => {
-    if (!keysDown.has(e.code)) keysPressed.add(e.code);
-    keysDown.add(e.code);
-    if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code))
-      e.preventDefault();
+// ================================================================
+// SECTION 22: ENTITY INITIALIZATION
+// ================================================================
+function initEntities() {
+  playerId = world.createEntity({
+    persistent: true,
+    player:     true,
+    transform:  { x: 15 * TILE_SIZE, y: 15 * TILE_SIZE },
+    velocity:   { dx: 0, dy: 0, speed: 60 },
+    animator:   createAnimator(CLIPS_PLAYER, 'idle'),
+    collider:   true,
   });
-  window.addEventListener('keyup', e => {
-    keysDown.delete(e.code);
-    keysReleased.add(e.code);
-  });
+}
 
-  function update() {
-    const gp = Array.from(navigator.getGamepads?.() || []).find(g => g?.connected);
-    snap.axis.x = gp && Math.abs(gp.axes[0]) > 0.15 ? gp.axes[0] : 0;
-    snap.axis.y = gp && Math.abs(gp.axes[1]) > 0.15 ? gp.axes[1] : 0;
-
-    for (const [action, map] of Object.entries(ACTION_MAP)) {
-      const gpHeld = gp ? map.gamepadButtons.some(b => gp.buttons[b]?.pressed) : false;
-      snap.held[action]     = map.keys.some(k => keysDown.has(k))    || gpHeld;
-      snap.pressed[action]  = map.keys.some(k => keysPressed.has(k)) ||
-                              (gpHeld && !snap.held[action + '_gp']);
-      snap.released[action] = map.keys.some(k => keysReleased.has(k));
-      snap.held[action + '_gp'] = gpHeld;
-    }
-    keysPressed.clear();
-    keysReleased.clear();
-  }
-
-  return {
-    update,
-    held:     a => !!snap.held[a],
-    pressed:  a => !!snap.pressed[a],
-    released: a => !!snap.released[a],
-    axis:     () => snap.axis,
-  };
-})();
-
-// ============================================================
-// SECTION 13: WORLD MAP DATA
-// ============================================================
-
-// Shorthand aliases for map readability.
-const G = 'grass', S = 'stone', W = 'water', T = 'tree', L = 'wall', _ = null;
-
-// BG layer — 36 rows × 40 cols. Every cell must be non-null.
-const LAYER_BG = [
-//col:0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39
-/*r0*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
-/*r1*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
-/*r2*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
-/*r3*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
-/*r4*/[G, G, G, G, G,'water','water','water','water','water',G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
-/*r5*/[G, G, G, G, G,'water','water','water','water','water',G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
-/*r6*/[G, G, G, G, G,'water','water','water','water','water',G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
-/*r7*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
-/*r8*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
-/*r9*/[G, G, G, G, G, G, S, S, S, S, S, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
-/*10*/[G, G, G, G, G, G, S, S, S, S, S, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
-/*11*/[G, G, G, G, G, G, S, S, S, S, S, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
-/*12*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
-/*13*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
-/*14*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
-/*15*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
-/*16*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
-/*17*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
-/*18*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
-/*19*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
-/*20*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
-/*21*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
-/*22*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
-/*23*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
-/*24*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
-/*25*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
-/*26*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
-/*27*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
-/*28*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
-/*29*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
-/*30*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
-/*31*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
-/*32*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
-/*33*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
-/*34*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
-/*35*/[G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G, G],
-];
-
-// Object layer (sparse — null = empty).
-const LAYER_OBJECTS = Array.from({length: WORLD_ROWS}, () => Array(WORLD_COLS).fill(null));
-// Place trees
-[[1,1],[1,3],[2,6],[3,15],[5,14],[0,12],[8,20],[10,22],[15,5],[14,8],[20,2],[22,4]].forEach(([r,c])=>{
-  if(r < WORLD_ROWS && c < WORLD_COLS) LAYER_OBJECTS[r][c] = 'tree';
-});
-// Place flowers
-[[3,3],[3,7],[6,2],[7,12],[8,15],[12,6],[18,10],[20,14]].forEach(([r,c])=>{
-  if(r < WORLD_ROWS && c < WORLD_COLS) LAYER_OBJECTS[r][c] = 'flower';
-});
-// Wall border (row 14–17, col 20–26)
-for (let r = 14; r <= 17; r++)
-  for (let c = 20; c <= 26; c++)
-    LAYER_OBJECTS[r][c] = (r === 14 || r === 17 || c === 20 || c === 26) ? 'wall' : null;
-
-// Collision layer — true = solid tile.
-const LAYER_COLLISION = Array.from({length: WORLD_ROWS}, () => Array(WORLD_COLS).fill(false));
-
-// Water is solid
-for (let r = 4; r <= 6; r++)
-  for (let c = 5; c <= 9; c++)
-    LAYER_COLLISION[r][c] = true;
-
-// Wall border is solid
-for (let r = 14; r <= 17; r++)
-  for (let c = 20; c <= 26; c++)
-    if (r === 14 || r === 17 || c === 20 || c === 26)
-      LAYER_COLLISION[r][c] = true;
-
-// Trees as solid
-[[1,1],[1,3],[2,6],[3,15],[5,14],[0,12],[8,20],[10,22],[15,5],[14,8],[20,2],[22,4]].forEach(([r,c])=>{
-  if(r < WORLD_ROWS && c < WORLD_COLS) LAYER_COLLISION[r][c] = true;
-});
-
-// ============================================================
-// SECTION 14: ENTITY INITIALIZATION
-// ============================================================
-
-// Player entity
-const playerAnimClips = {
-  idle:      { frames: ['player_idle'],           durations: 0.2  },
-  walk_down: { frames: ['player_d0','player_d1'], durations: 0.18 },
-  walk_up:   { frames: ['player_u0','player_u1'], durations: 0.18 },
-  walk_side: { frames: ['player_s0','player_s1'], durations: 0.18 },
-};
-
-const playerId = world.createEntity({
-  player:    true,
-  transform: { x: 15 * TILE_SIZE, y: 15 * TILE_SIZE },
-  velocity:  { dx: 0, dy: 0, speed: 60 },
-  animator:  createAnimator(playerAnimClips, 'idle'),
-  collider:  true,
-});
-
-// NPC A — yellow, patrols a loop
-const npcAClips = {
-  idle:      { frames: ['npc_a'],           durations: 0.3  },
-  walk_down: { frames: ['npc_a'],           durations: 0.3  },
-  walk_up:   { frames: ['npc_a'],           durations: 0.3  },
-  walk_side: { frames: ['npc_a'],           durations: 0.3  },
-};
-world.createEntity({
-  transform: { x: 12 * TILE_SIZE, y: 12 * TILE_SIZE },
-  velocity:  { dx: 0, dy: 0, speed: 30 },
-  animator:  createAnimator(npcAClips, 'idle'),
-  collider:  true,
-  patrol: {
-    speed: 30,
-    waypointIdx: 0,
-    waypoints: [
-      { x: 12 * TILE_SIZE, y: 12 * TILE_SIZE },
-      { x: 17 * TILE_SIZE, y: 12 * TILE_SIZE },
-      { x: 17 * TILE_SIZE, y: 17 * TILE_SIZE },
-      { x: 12 * TILE_SIZE, y: 17 * TILE_SIZE },
-    ],
-  },
-});
-
-// NPC B — pink, smaller patrol
-const npcBClips = {
-  idle:      { frames: ['npc_b'], durations: 0.3 },
-  walk_down: { frames: ['npc_b'], durations: 0.3 },
-  walk_up:   { frames: ['npc_b'], durations: 0.3 },
-  walk_side: { frames: ['npc_b'], durations: 0.3 },
-};
-world.createEntity({
-  transform: { x: 25 * TILE_SIZE, y: 8 * TILE_SIZE },
-  velocity:  { dx: 0, dy: 0, speed: 20 },
-  animator:  createAnimator(npcBClips, 'idle'),
-  collider:  true,
-  patrol: {
-    speed: 20,
-    waypointIdx: 0,
-    waypoints: [
-      { x: 25 * TILE_SIZE, y: 8  * TILE_SIZE },
-      { x: 30 * TILE_SIZE, y: 8  * TILE_SIZE },
-      { x: 30 * TILE_SIZE, y: 13 * TILE_SIZE },
-      { x: 25 * TILE_SIZE, y: 13 * TILE_SIZE },
-    ],
-  },
-});
-
-// ============================================================
-// SECTION 15: MAIN LOOP
-// ============================================================
-
-// System execution order matters:
-//   1. Input   — updates player velocity/animation intent
-//   2. AI      — updates NPC velocity/animation intent
-//   3. Movement— applies velocity with collision resolution
-//   4. Camera  — repositions viewport after entities move
-//   5. Anim    — advances all animator timers
-//   6. Render  — draws everything
-
-const SYSTEMS = [
-  (delta)          => input.update(),
-  (delta)          => InputSystem(delta),
-  (delta)          => AISystem(delta),
-  (delta)          => MovementSystem(delta),
-  ()               => CameraSystem(),
-  (delta)          => AnimationSystem(delta),
-];
-
-let lastTime = 0;
-let elapsed  = 0;
+// ================================================================
+// SECTION 23: MAIN LOOP
+//
+// System order is critical:
+//   input.update → sysInput → sysAI → sysMovement → sysSpatialHash
+//   → sysCamera → sysSceneTransition → sysAnimation → sysDialog
+//
+// Render pass (separate from logic):
+//   clearBuffer → drawTilemap(BG) → drawTilemap(Objects) → sysRender
+//   → renderDialog → renderSaveNote → flushBuffer → renderTransitionOverlay (ctx)
+// ================================================================
+let elapsed   = 0, lastTime = 0;
 let fps = 0, fpsTimer = 0, fpsFrames = 0;
 
-function loop(timestamp) {
-  const delta = Math.min((timestamp - lastTime) / 1000, 0.05);
-  lastTime = timestamp;
-  elapsed += delta;
+initEntities();
+loadScene('overworld');
 
-  // FPS
-  fpsFrames++;
-  fpsTimer += delta;
-  if (fpsTimer >= 0.5) {
-    fps = Math.round(fpsFrames / fpsTimer);
-    fpsTimer = fpsFrames = 0;
-  }
+// Attempt to restore a save on startup
+if (saveLoad.hasSave()) {
+  if (saveLoad.load()) showNote('SAVE LOADED');
+}
 
-  // Run logic systems.
-  for (const sys of SYSTEMS) sys(delta, elapsed);
+function loop(ts) {
+  const delta = Math.min((ts - lastTime) / 1000, 0.05);
+  lastTime = ts; elapsed += delta;
+  fpsFrames++; fpsTimer += delta;
+  if (fpsTimer >= 0.5) { fps = Math.round(fpsFrames / fpsTimer); fpsTimer = fpsFrames = 0; }
 
-  // Render pass.
-  clearBuffer(0);
-  drawTilemap(LAYER_BG,      elapsed);
-  drawTilemap(LAYER_OBJECTS, elapsed);
-  RenderSystem(elapsed);
+  if (saveNote.timer > 0) saveNote.timer -= delta;
+  updateTransition(delta);
+
+  // --- Logic Systems ---
+  input.update();
+  sysInput();
+  sysAI(delta);
+  sysMovement(delta);
+  sysSpatialHash();
+  sysCamera();
+  sysSceneTransition();
+  sysAnimation(delta);
+  sysDialog();
+
+  // --- Render Pass ---
+  clearBuffer(SCENES[worldState.currentScene]?.bgColor ?? 0);
+  drawTilemap(worldState.layerBG,      elapsed);
+  drawTilemap(worldState.layerObjects, elapsed);
+  sysRender();
+  renderDialog();
+  renderSaveNote();
   flushBuffer();
 
-  // Debug HUD (drawn via ctx so it doesn't pollute framebuffer).
-  const ptf = world.getComponent(playerId, 'transform');
+  // Transition overlay drawn via ctx AFTER flush (scales with CSS).
+  renderTransitionOverlay();
+
+  // Debug HUD
+  const ptf = world.get(playerId, 'transform');
+  const scene = worldState.currentScene;
   document.getElementById('debug').textContent =
-    `FPS: ${fps}  Cam: ${camera.x},${camera.y}\n` +
-    `Player world: ${ptf.x|0},${ptf.y|0}  tile: ${ptf.x/TILE_SIZE|0},${ptf.y/TILE_SIZE|0}\n` +
-    `[WASD/Arrows] Move`;
+    `FPS: ${fps}  SCENE: ${scene}\n` +
+    `PLAYER: ${ptf?.x|0},${ptf?.y|0}  TILE: ${ptf?.x/TILE_SIZE|0},${ptf?.y/TILE_SIZE|0}\n` +
+    `CAM: ${camera.x},${camera.y}  WORLD: ${worldState.w}x${worldState.h}px\n` +
+    `ENTITIES: ${[...world.allIds].length}  DIALOG: ${dialog.active}`;
 
   requestAnimationFrame(loop);
 }
