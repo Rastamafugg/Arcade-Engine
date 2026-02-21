@@ -1,9 +1,10 @@
+@@ -0,0 +1,657 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Pixel Canvas Template</title>
+<title>Pixel Canvas v2</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -17,185 +18,633 @@
   }
   canvas {
     display: block;
-    /* Crisp pixel rendering — critical for upscaled pixel art */
     image-rendering: pixelated;
     image-rendering: crisp-edges;
+  }
+  #debug {
+    position: fixed;
+    top: 8px;
+    left: 8px;
+    color: #0f0;
+    font: 10px monospace;
+    pointer-events: none;
+    white-space: pre;
+    line-height: 1.5;
   }
 </style>
 </head>
 <body>
 <canvas id="screen"></canvas>
+<div id="debug"></div>
+
 <script>
 'use strict';
 
 // ============================================================
-// CONFIG — adjust these to define your screen
+// CONFIG
 // ============================================================
-const TILE_SIZE   = 8;    // pixels per tile (logical)
-const COLS        = 20;   // screen width in tiles
-const ROWS        = 18;   // screen height in tiles
-
-const LOGICAL_W   = COLS * TILE_SIZE;  // 160
-const LOGICAL_H   = ROWS * TILE_SIZE;  // 144
+const TILE_SIZE = 8;
+const COLS      = 20;
+const ROWS      = 18;
+const LOGICAL_W = COLS * TILE_SIZE;  // 160
+const LOGICAL_H = ROWS * TILE_SIZE;  // 144
 
 // ============================================================
-// SPRITE DEFINITIONS
-// Each sprite is an 8x8 flat array (64 values).
-// Use a hex color string or null for transparent.
-// Row-major order: index = y * 8 + x
+// SECTION 1: PALETTE SYSTEM
+//
+// All colors are defined once here. Sprites reference palette
+// indices (integers). Null always means transparent.
+//
+// Advantages over inline hex strings:
+//   - Swap the entire visual theme by editing this one array
+//   - Sprite data stays small (integers, not strings)
+//   - Palette swapping per-sprite is trivial (pass alt palette)
+// ============================================================
+const PALETTE = [
+  /* 00 */ '#222034',  // background / void
+  /* 01 */ '#45283C',  // dark purple
+  /* 02 */ '#663931',  // dark red
+  /* 03 */ '#8F563B',  // brown
+  /* 04 */ '#DF7126',  // orange
+  /* 05 */ '#D9A066',  // tan
+  /* 06 */ '#EEC39A',  // light skin
+  /* 07 */ '#FBF236',  // yellow
+  /* 08 */ '#99E550',  // green
+  /* 09 */ '#6ABE30',  // dark green
+  /* 10 */ '#37946E',  // teal
+  /* 11 */ '#4B692F',  // olive
+  /* 12 */ '#524B24',  // dark olive
+  /* 13 */ '#323C39',  // dark slate
+  /* 14 */ '#3F3F74',  // indigo
+  /* 15 */ '#306082',  // steel blue
+  /* 16 */ '#5B6EE1',  // blue
+  /* 17 */ '#639BFF',  // light blue
+  /* 18 */ '#5FCDE4',  // sky
+  /* 19 */ '#CBDBFC',  // pale blue
+  /* 20 */ '#FFFFFF',  // white
+  /* 21 */ '#9BADB7',  // light gray
+  /* 22 */ '#847E87',  // mid gray
+  /* 23 */ '#696A6A',  // gray
+  /* 24 */ '#595652',  // dark gray
+  /* 25 */ '#76428A',  // violet
+  /* 26 */ '#AC3232',  // red
+  /* 27 */ '#D95763',  // pink-red
+];
+
+// Pre-convert palette to RGBA Uint8 tuples for fast framebuffer writes.
+// Format: paletteRGBA[i] = [r, g, b, 255]
+const paletteRGBA = PALETTE.map(hex => {
+  const n = parseInt(hex.replace('#', ''), 16);
+  return [(n >> 16) & 0xFF, (n >> 8) & 0xFF, n & 0xFF, 255];
+});
+
+// ============================================================
+// SECTION 2: SPRITE DEFINITIONS
+//
+// Sprites are 8x8 = 64-element flat arrays.
+// Values are palette indices (integers) or null (transparent).
+// Row-major: index = row * 8 + col
 // ============================================================
 const SPRITES = {
 
-  // Example: a simple smiley face
+  // Smiley face — uses palette indices
   smiley: [
-    null,  '#FFD700', '#FFD700', '#FFD700', '#FFD700', '#FFD700', '#FFD700', null,
-    '#FFD700', '#FFD700', '#FFD700', '#FFD700', '#FFD700', '#FFD700', '#FFD700', '#FFD700',
-    '#FFD700', '#111',   '#FFD700', '#FFD700', '#FFD700', '#FFD700', '#111',   '#FFD700',
-    '#FFD700', '#FFD700', '#FFD700', '#FFD700', '#FFD700', '#FFD700', '#FFD700', '#FFD700',
-    '#FFD700', '#FFD700', '#FFD700', '#FFD700', '#FFD700', '#FFD700', '#FFD700', '#FFD700',
-    '#FFD700', '#111',   '#FFD700', '#FFD700', '#FFD700', '#FFD700', '#111',   '#FFD700',
-    '#FFD700', '#FFD700', '#111',   '#111',   '#111',   '#111',   '#FFD700', '#FFD700',
-    null,  '#FFD700', '#FFD700', '#FFD700', '#FFD700', '#FFD700', '#FFD700', null,
+     null,  7,  7,  7,  7,  7,  7, null,
+        7,  7,  7,  7,  7,  7,  7,  7,
+        7, 24,  7,  7,  7,  7, 24,  7,
+        7,  7,  7,  7,  7,  7,  7,  7,
+        7,  7,  7,  7,  7,  7,  7,  7,
+        7, 24,  7,  7,  7,  7, 24,  7,
+        7,  7, 24, 24, 24, 24,  7,  7,
+     null,  7,  7,  7,  7,  7,  7, null,
   ],
 
-  // Example: a red box with a cross
-  redX: [
-    '#CC0000', '#CC0000', '#CC0000', '#CC0000', '#CC0000', '#CC0000', '#CC0000', '#CC0000',
-    '#CC0000', '#FF4444', null,      null,      null,      null,      '#FF4444', '#CC0000',
-    '#CC0000', null,      '#FF4444', null,      null,      '#FF4444', null,      '#CC0000',
-    '#CC0000', null,      null,      '#FF4444', '#FF4444', null,      null,      '#CC0000',
-    '#CC0000', null,      null,      '#FF4444', '#FF4444', null,      null,      '#CC0000',
-    '#CC0000', null,      '#FF4444', null,      null,      '#FF4444', null,      '#CC0000',
-    '#CC0000', '#FF4444', null,      null,      null,      null,      '#FF4444', '#CC0000',
-    '#CC0000', '#CC0000', '#CC0000', '#CC0000', '#CC0000', '#CC0000', '#CC0000', '#CC0000',
+  // Tree
+  tree: [
+     null, null,  8, null, null,  8, null, null,
+     null,  8,  8,  8,  8,  8,  8, null,
+        8,  8,  8,  9,  9,  8,  8,  8,
+     null,  8,  9,  8,  8,  9,  8, null,
+     null, null,  8,  8,  8,  8, null, null,
+     null, null, null,  3, null, null, null, null,
+     null, null, null,  3, null, null, null, null,
+     null, null, null, null, null, null, null, null,
   ],
 
-  // Add more sprites here...
+  // Grass tile
+  grass: [
+        9,  9,  8,  9,  9,  9,  8,  9,
+        8,  9,  9,  9,  8,  9,  9,  8,
+        9,  9,  8,  9,  9,  8,  9,  9,
+       11, 11, 11,  9, 11, 11, 11, 11,
+       11, 11, 11, 11, 11, 11, 11, 11,
+       12, 11, 11, 11, 12, 11, 11, 12,
+       11, 11, 12, 11, 11, 11, 12, 11,
+       11, 12, 11, 11, 11, 12, 11, 11,
+  ],
+
+  // Water tile (animatable — see tileAnimations)
+  water0: [
+       18, 17, 18, 18, 18, 17, 18, 18,
+       18, 18, 17, 18, 18, 18, 17, 18,
+       15, 18, 18, 18, 15, 18, 18, 18,
+       18, 15, 18, 18, 18, 15, 18, 18,
+       18, 18, 18, 15, 18, 18, 18, 15,
+       18, 18, 15, 18, 18, 18, 15, 18,
+       17, 18, 18, 18, 17, 18, 18, 18,
+       18, 17, 18, 18, 18, 17, 18, 18,
+  ],
+  water1: [
+       18, 18, 17, 18, 18, 18, 17, 18,
+       17, 18, 18, 18, 17, 18, 18, 18,
+       18, 18, 18, 15, 18, 18, 18, 15,
+       18, 18, 15, 18, 18, 18, 15, 18,
+       15, 18, 18, 18, 15, 18, 18, 18,
+       18, 15, 18, 18, 18, 15, 18, 18,
+       18, 18, 18, 17, 18, 18, 18, 17,
+       18, 18, 17, 18, 18, 18, 17, 18,
+  ],
+
+  // Stone path tile
+  stone: [
+       22, 21, 22, 22, 22, 22, 21, 22,
+       21, 22, 22, 22, 21, 22, 22, 22,
+       22, 22, 22, 21, 22, 22, 22, 21,
+       23, 23, 23, 23, 23, 23, 23, 23,
+       22, 22, 22, 23, 22, 22, 22, 23,
+       22, 23, 22, 22, 22, 23, 22, 22,
+       23, 22, 22, 22, 23, 22, 22, 22,
+       22, 22, 23, 22, 22, 22, 23, 22,
+  ],
+
+  // Player character (facing down)
+  player: [
+     null, null,  6,  6,  6,  6, null, null,
+     null,  6, 24,  6,  6, 24,  6, null,
+     null,  6,  6,  6,  6,  6,  6, null,
+     null, 16, 16, 16, 16, 16, 16, null,
+       16, 16,  5, 16, 16,  5, 16, 16,
+     null, 16,  5,  5,  5,  5, 16, null,
+     null,  5, null, null, null, null,  5, null,
+     null,  5, null, null, null, null,  5, null,
+  ],
 };
 
 // ============================================================
-// CANVAS SETUP & SCALING
+// SECTION 3: SPRITE CACHE — pre-rasterize to RGBA buffers
+//
+// Each sprite is converted once from palette indices to a flat
+// Uint8ClampedArray of [r,g,b,a, r,g,b,a ...] pixel data.
+// This eliminates palette lookups during every blit call.
 // ============================================================
-const canvas  = document.getElementById('screen');
-const ctx     = canvas.getContext('2d');
+const spriteCache = {};
+
+function buildSpriteCache() {
+  for (const [name, data] of Object.entries(SPRITES)) {
+    const buf = new Uint8ClampedArray(TILE_SIZE * TILE_SIZE * 4);
+    for (let i = 0; i < 64; i++) {
+      const idx = data[i];
+      const base = i * 4;
+      if (idx === null) {
+        buf[base + 3] = 0; // fully transparent
+      } else {
+        const rgba = paletteRGBA[idx];
+        buf[base]     = rgba[0];
+        buf[base + 1] = rgba[1];
+        buf[base + 2] = rgba[2];
+        buf[base + 3] = 255;
+      }
+    }
+    spriteCache[name] = buf;
+  }
+}
+
+buildSpriteCache();
+
+// Rebuild cache with an alternative palette (palette swap)
+// altPalette: array of the same length as PALETTE, or a sparse
+// object { originalIndex: newIndex }
+function buildPaletteSwappedSprite(spriteName, indexMap) {
+  const data = SPRITES[spriteName];
+  if (!data) return null;
+  const buf = new Uint8ClampedArray(TILE_SIZE * TILE_SIZE * 4);
+  for (let i = 0; i < 64; i++) {
+    const raw = data[i];
+    const idx = (raw !== null && indexMap[raw] !== undefined) ? indexMap[raw] : raw;
+    const base = i * 4;
+    if (idx === null || raw === null) {
+      buf[base + 3] = 0;
+    } else {
+      const rgba = paletteRGBA[idx];
+      buf[base]     = rgba[0];
+      buf[base + 1] = rgba[1];
+      buf[base + 2] = rgba[2];
+      buf[base + 3] = 255;
+    }
+  }
+  return buf;
+}
+
+// ============================================================
+// SECTION 4: CANVAS & FRAMEBUFFER SETUP
+//
+// Performance model:
+//   - One Uint8ClampedArray framebuffer (LOGICAL_W * LOGICAL_H * 4)
+//   - All drawing writes into this buffer directly (no ctx calls)
+//   - One putImageData call per frame to flush the buffer
+//
+// Why ImageData is faster than fillRect per pixel:
+//   - fillRect: JS call overhead per pixel, state machine in browser
+//     rendering engine per call — O(n) draw calls for n pixels
+//   - ImageData: one putImageData uploads the entire framebuffer in
+//     a single operation; all pixel writes are typed array assignments
+//     (fast, no call overhead per pixel)
+//
+// Tradeoffs of ImageData approach:
+//   PRO: Dramatically faster for dense pixel operations (many sprites)
+//   PRO: Enables custom blending, masking, scanline effects directly
+//   PRO: Single GPU texture upload per frame regardless of scene complexity
+//   CON: No hardware-accelerated transforms (rotation, scaling per-sprite)
+//   CON: Transparency requires manual alpha compositing (see blitSprite)
+//   CON: Cannot leverage GPU compositing (ctx.globalAlpha etc) per draw call
+//   CON: Slightly more complex code
+// ============================================================
+const canvas = document.getElementById('screen');
+const ctx    = canvas.getContext('2d');
 
 canvas.width  = LOGICAL_W;
 canvas.height = LOGICAL_H;
-
-// Disable anti-aliasing on the context (redundant but safe)
 ctx.imageSmoothingEnabled = false;
 
-function fitToWindow() {
-  const scaleX = window.innerWidth  / LOGICAL_W;
-  const scaleY = window.innerHeight / LOGICAL_H;
-  const scale  = Math.min(scaleX, scaleY);          // maintain aspect ratio
-  const displayW = Math.round(LOGICAL_W * scale);
-  const displayH = Math.round(LOGICAL_H * scale);
-  canvas.style.width  = displayW + 'px';
-  canvas.style.height = displayH + 'px';
-}
+// Single framebuffer — reused every frame
+const frameImageData = ctx.createImageData(LOGICAL_W, LOGICAL_H);
+const frameBuffer    = frameImageData.data; // Uint8ClampedArray
 
+function fitToWindow() {
+  const scale  = Math.min(window.innerWidth / LOGICAL_W, window.innerHeight / LOGICAL_H);
+  canvas.style.width  = Math.round(LOGICAL_W * scale) + 'px';
+  canvas.style.height = Math.round(LOGICAL_H * scale) + 'px';
+}
 window.addEventListener('resize', fitToWindow);
 fitToWindow();
 
 // ============================================================
-// DRAWING API
+// SECTION 5: LOW-LEVEL DRAW API (writes to frameBuffer)
 // ============================================================
 
-// Clear the entire screen with a background color
-function clearScreen(color = '#222034') {
-  ctx.fillStyle = color;
-  ctx.fillRect(0, 0, LOGICAL_W, LOGICAL_H);
-}
-
-// Draw a sprite by name at tile coordinates (tileX, tileY)
-// Optional: pass flipX or flipY booleans
-function drawSprite(name, tileX, tileY, { flipX = false, flipY = false } = {}) {
-  const data = SPRITES[name];
-  if (!data) { console.warn(`Sprite not found: ${name}`); return; }
-
-  const px = tileX * TILE_SIZE;
-  const py = tileY * TILE_SIZE;
-
-  for (let i = 0; i < 64; i++) {
-    const color = data[i];
-    if (color === null) continue;  // transparent
-
-    let sx = i % TILE_SIZE;
-    let sy = Math.floor(i / TILE_SIZE);
-
-    if (flipX) sx = TILE_SIZE - 1 - sx;
-    if (flipY) sy = TILE_SIZE - 1 - sy;
-
-    ctx.fillStyle = color;
-    ctx.fillRect(px + sx, py + sy, 1, 1);
+// Fill the entire framebuffer with a palette color index
+function clearBuffer(paletteIndex = 0) {
+  const [r, g, b] = paletteRGBA[paletteIndex];
+  for (let i = 0; i < frameBuffer.length; i += 4) {
+    frameBuffer[i]     = r;
+    frameBuffer[i + 1] = g;
+    frameBuffer[i + 2] = b;
+    frameBuffer[i + 3] = 255;
   }
 }
 
-// Draw a solid tile rectangle (in tile coordinates, in tile units)
-function fillTiles(tileX, tileY, tileW, tileH, color) {
-  ctx.fillStyle = color;
-  ctx.fillRect(
-    tileX * TILE_SIZE,
-    tileY * TILE_SIZE,
-    tileW * TILE_SIZE,
-    tileH * TILE_SIZE
-  );
-}
+// Blit a pre-built RGBA buffer (64 pixels) to framebuffer at pixel (px, py)
+// Handles transparency (alpha = 0 pixels are skipped)
+function blitBuffer(rgbaBuf, px, py, flipX = false, flipY = false) {
+  for (let row = 0; row < TILE_SIZE; row++) {
+    const srcRow = flipY ? TILE_SIZE - 1 - row : row;
+    const destY  = py + row;
+    if (destY < 0 || destY >= LOGICAL_H) continue;
 
-// Draw a 1-pixel (logical) line between two logical pixel coords
-function drawLine(x0, y0, x1, y1, color) {
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(x0 + 0.5, y0 + 0.5);
-  ctx.lineTo(x1 + 0.5, y1 + 0.5);
-  ctx.stroke();
-}
+    for (let col = 0; col < TILE_SIZE; col++) {
+      const srcCol = flipX ? TILE_SIZE - 1 - col : col;
+      const destX  = px + col;
+      if (destX < 0 || destX >= LOGICAL_W) continue;
 
-// Optional: render a visible tile grid overlay (debug aid)
-function drawGrid(color = 'rgba(255,255,255,0.05)') {
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 0.5;
-  for (let x = 0; x <= COLS; x++) {
-    ctx.beginPath();
-    ctx.moveTo(x * TILE_SIZE, 0);
-    ctx.lineTo(x * TILE_SIZE, LOGICAL_H);
-    ctx.stroke();
+      const srcBase  = (srcRow * TILE_SIZE + srcCol) * 4;
+      const srcAlpha = rgbaBuf[srcBase + 3];
+      if (srcAlpha === 0) continue; // transparent — skip
+
+      const destBase = (destY * LOGICAL_W + destX) * 4;
+      if (srcAlpha === 255) {
+        // Fully opaque — direct copy (fastest path)
+        frameBuffer[destBase]     = rgbaBuf[srcBase];
+        frameBuffer[destBase + 1] = rgbaBuf[srcBase + 1];
+        frameBuffer[destBase + 2] = rgbaBuf[srcBase + 2];
+        frameBuffer[destBase + 3] = 255;
+      } else {
+        // Semi-transparent — alpha blend
+        const a   = srcAlpha / 255;
+        const ia  = 1 - a;
+        frameBuffer[destBase]     = (rgbaBuf[srcBase]     * a + frameBuffer[destBase]     * ia) | 0;
+        frameBuffer[destBase + 1] = (rgbaBuf[srcBase + 1] * a + frameBuffer[destBase + 1] * ia) | 0;
+        frameBuffer[destBase + 2] = (rgbaBuf[srcBase + 2] * a + frameBuffer[destBase + 2] * ia) | 0;
+        frameBuffer[destBase + 3] = 255;
+      }
+    }
   }
-  for (let y = 0; y <= ROWS; y++) {
-    ctx.beginPath();
-    ctx.moveTo(0, y * TILE_SIZE);
-    ctx.lineTo(LOGICAL_W, y * TILE_SIZE);
-    ctx.stroke();
+}
+
+// Blit a named sprite to pixel coordinates (px, py)
+function blitSprite(name, px, py, flipX = false, flipY = false, swappedBuf = null) {
+  const buf = swappedBuf || spriteCache[name];
+  if (!buf) { console.warn(`Sprite not found: ${name}`); return; }
+  blitBuffer(buf, px, py, flipX, flipY);
+}
+
+// Blit a named sprite at tile coordinates (tx, ty)
+function blitSpriteTile(name, tx, ty, flipX = false, flipY = false, swappedBuf = null) {
+  blitSprite(name, tx * TILE_SIZE, ty * TILE_SIZE, flipX, flipY, swappedBuf);
+}
+
+// Fill a rectangle in the framebuffer with a palette color index
+function fillRect(px, py, w, h, paletteIndex) {
+  const [r, g, b] = paletteRGBA[paletteIndex];
+  for (let row = Math.max(0, py); row < Math.min(LOGICAL_H, py + h); row++) {
+    for (let col = Math.max(0, px); col < Math.min(LOGICAL_W, px + w); col++) {
+      const base = (row * LOGICAL_W + col) * 4;
+      frameBuffer[base]     = r;
+      frameBuffer[base + 1] = g;
+      frameBuffer[base + 2] = b;
+      frameBuffer[base + 3] = 255;
+    }
+  }
+}
+
+// Flush framebuffer to canvas — call once per frame after all drawing
+function flushBuffer() {
+  ctx.putImageData(frameImageData, 0, 0);
+}
+
+// ============================================================
+// SECTION 6: TILEMAP LAYER SYSTEM
+//
+// A tilemap layer is a 2D array [ROWS][COLS] of sprite names.
+// Null cells are skipped (transparent / no tile).
+// Multiple layers can be stacked: background → midground → foreground.
+//
+// Animated tiles: tileAnimations maps a base sprite name to an array
+// of sprite names that cycle at a defined frame rate.
+// ============================================================
+
+// Tile animation definitions: name → { frames[], fps }
+const TILE_ANIMATIONS = {
+  water: { frames: ['water0', 'water1'], fps: 2 },
+};
+
+// Pre-resolve animation frame for a sprite name given elapsed time
+function resolveSpriteName(name, elapsed) {
+  const anim = TILE_ANIMATIONS[name];
+  if (!anim) return name;
+  const frameIndex = Math.floor(elapsed * anim.fps) % anim.frames.length;
+  return anim.frames[frameIndex];
+}
+
+// Draw an entire tilemap layer in one call
+// layer: 2D array [row][col] of sprite names (or null)
+// elapsed: total elapsed time in seconds (for animation)
+function drawTilemap(layer, elapsed = 0) {
+  for (let row = 0; row < layer.length; row++) {
+    for (let col = 0; col < layer[row].length; col++) {
+      const cell = layer[row][col];
+      if (cell === null) continue;
+      const resolved = resolveSpriteName(cell, elapsed);
+      blitSpriteTile(resolved, col, row);
+    }
   }
 }
 
 // ============================================================
-// GAME LOOP
+// EXAMPLE TILEMAP DATA
 // ============================================================
-let lastTime = 0;
+// BG layer: fills the entire screen
+const LAYER_BG = [
+  ['grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass'],
+  ['grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass'],
+  ['grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass'],
+  ['grass','grass','grass','water','water','water','water','water','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass'],
+  ['grass','grass','grass','water','water','water','water','water','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass'],
+  ['grass','grass','grass','water','water','water','water','water','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass'],
+  ['grass','grass','grass','grass','stone','stone','stone','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass'],
+  ['grass','grass','grass','grass','stone','stone','stone','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass'],
+  ['grass','grass','grass','grass','stone','stone','stone','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass'],
+  ['grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass'],
+  ['grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass'],
+  ['grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass'],
+  ['grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass'],
+  ['grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass'],
+  ['grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass'],
+  ['grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass'],
+  ['grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass'],
+  ['grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass','grass'],
+];
+
+// Object layer: sparse — only defined cells are non-null
+const LAYER_OBJECTS = [
+  [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],
+  [null,null,'tree',null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],
+  [null,null,null,null,null,null,null,null,null,null,null,null,'tree',null,null,null,null,null,null,null],
+  [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],
+  [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],
+  [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],
+  [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],
+  [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],
+  [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],
+  [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],
+  [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],
+  [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],
+  [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],
+  [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],
+  [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],
+  [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],
+  [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],
+  [null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null],
+];
+
+// ============================================================
+// SECTION 7: INPUT HANDLER
+//
+// Architecture: event listeners maintain a raw key/button state.
+// Each frame, the game loop calls input.update() to snapshot
+// current state and compute edge-triggered (pressed/released) flags.
+// Gamepad is polled via navigator.getGamepads() in update().
+//
+// Actions are abstract — mapped from physical keys/buttons.
+// Game logic references actions, not raw keys, so remapping
+// requires only editing the ACTION_MAP.
+// ============================================================
+
+const ACTION_MAP = {
+  // action: { keys: [KeyboardEvent.code...], gamepadButtons: [index...] }
+  up:     { keys: ['ArrowUp',    'KeyW'],  gamepadButtons: [12] },
+  down:   { keys: ['ArrowDown',  'KeyS'],  gamepadButtons: [13] },
+  left:   { keys: ['ArrowLeft',  'KeyA'],  gamepadButtons: [14] },
+  right:  { keys: ['ArrowRight', 'KeyD'],  gamepadButtons: [15] },
+  action: { keys: ['KeyZ', 'Space'],       gamepadButtons: [0]  },
+  cancel: { keys: ['KeyX', 'Escape'],      gamepadButtons: [1]  },
+  start:  { keys: ['Enter'],               gamepadButtons: [9]  },
+};
+
+const input = (() => {
+  // Raw state
+  const keysDown    = new Set();
+  const keysPressed = new Set(); // cleared each frame
+  const keysReleased = new Set();
+
+  // Snapshot state (stable within a frame)
+  const snapshot = {
+    held: {},
+    pressed: {},
+    released: {},
+    // Analog stick (gamepad only)
+    axis: { x: 0, y: 0 },
+  };
+
+  // Keyboard listeners
+  window.addEventListener('keydown', e => {
+    if (!keysDown.has(e.code)) {
+      keysPressed.add(e.code);
+    }
+    keysDown.add(e.code);
+    // Prevent arrow key scrolling
+    if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)) {
+      e.preventDefault();
+    }
+  });
+
+  window.addEventListener('keyup', e => {
+    keysDown.delete(e.code);
+    keysReleased.add(e.code);
+  });
+
+  // Called once per frame at the START of the game loop
+  function update() {
+    // Poll gamepad
+    const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
+    const gp = Array.from(gamepads).find(g => g && g.connected) || null;
+
+    // Analog stick
+    if (gp) {
+      snapshot.axis.x = Math.abs(gp.axes[0]) > 0.15 ? gp.axes[0] : 0;
+      snapshot.axis.y = Math.abs(gp.axes[1]) > 0.15 ? gp.axes[1] : 0;
+    } else {
+      snapshot.axis.x = 0;
+      snapshot.axis.y = 0;
+    }
+
+    // Build action state
+    for (const [action, mapping] of Object.entries(ACTION_MAP)) {
+      const keyHeld     = mapping.keys.some(k => keysDown.has(k));
+      const keyPressed  = mapping.keys.some(k => keysPressed.has(k));
+      const keyReleased = mapping.keys.some(k => keysReleased.has(k));
+
+      let gpHeld    = false;
+      let gpPressed = false;
+      if (gp) {
+        gpHeld = mapping.gamepadButtons.some(b => gp.buttons[b]?.pressed);
+        // Gamepad press detection: compare with prev frame
+        gpPressed = mapping.gamepadButtons.some(b =>
+          gp.buttons[b]?.pressed && !snapshot.held[action + '_gp']
+        );
+      }
+
+      snapshot.held[action]     = keyHeld || gpHeld;
+      snapshot.pressed[action]  = keyPressed || gpPressed;
+      snapshot.released[action] = keyReleased;
+
+      // Store raw gp held for next frame edge detection
+      snapshot.held[action + '_gp'] = gpHeld;
+    }
+
+    // Clear per-frame sets
+    keysPressed.clear();
+    keysReleased.clear();
+  }
+
+  // Public API
+  // input.held('up')     — true while key is held
+  // input.pressed('up')  — true only on the frame the key was pressed
+  // input.released('up') — true only on the frame the key was released
+  return {
+    update,
+    held:     action => !!snapshot.held[action],
+    pressed:  action => !!snapshot.pressed[action],
+    released: action => !!snapshot.released[action],
+    axis:     ()     => snapshot.axis,
+  };
+})();
+
+// ============================================================
+// SECTION 8: GAME STATE & LOOP
+// ============================================================
+
+const state = {
+  player: {
+    // pixel position (not tile — allows sub-tile movement)
+    x: 9 * TILE_SIZE,
+    y: 9 * TILE_SIZE,
+    speed: 40,     // pixels per second
+    facing: 'down',
+    // Palette-swapped variant for demo (recolored player)
+    swappedBuf: buildPaletteSwappedSprite('player', { 16: 27, 5: 27 }), // blue→pink-red
+  },
+  elapsed: 0,
+  fps: 0,
+  fpsTimer: 0,
+  fpsFrames: 0,
+};
 
 function update(delta) {
-  // --- game logic goes here ---
-  // delta = time since last frame in seconds
+  input.update();
+
+  // Player movement
+  let dx = 0, dy = 0;
+  const axis = input.axis();
+
+  if (input.held('left')  || axis.x < -0.15) dx = -1;
+  if (input.held('right') || axis.x >  0.15) dx =  1;
+  if (input.held('up')    || axis.y < -0.15) dy = -1;
+  if (input.held('down')  || axis.y >  0.15) dy =  1;
+
+  state.player.x = Math.max(0, Math.min(LOGICAL_W - TILE_SIZE, state.player.x + dx * state.player.speed * delta));
+  state.player.y = Math.max(0, Math.min(LOGICAL_H - TILE_SIZE, state.player.y + dy * state.player.speed * delta));
+
+  // FPS counter
+  state.fpsFrames++;
+  state.fpsTimer += delta;
+  if (state.fpsTimer >= 0.5) {
+    state.fps = Math.round(state.fpsFrames / state.fpsTimer);
+    state.fpsTimer  = 0;
+    state.fpsFrames = 0;
+  }
 }
 
 function render() {
-  clearScreen('#222034');
+  clearBuffer(0);
 
-  // --- place sprites at tile positions ---
-  drawSprite('smiley', 2, 3);
-  drawSprite('redX',   5, 3);
-  drawSprite('smiley', 8, 3, { flipX: true });
+  // Layer 0: background tilemap
+  drawTilemap(LAYER_BG, state.elapsed);
 
-  // Optional grid overlay — remove in production
-  drawGrid();
+  // Layer 1: object tilemap (trees, etc.)
+  drawTilemap(LAYER_OBJECTS, state.elapsed);
+
+  // Layer 2: player sprite at pixel-exact position
+  blitSprite('player', state.player.x | 0, state.player.y | 0);
+
+  // Palette-swapped smiley demo
+  blitSpriteTile('smiley', 16, 2);
+  blitSpriteTile('smiley', 17, 2, false, false, buildPaletteSwappedSprite('smiley', { 7: 27 }));
+
+  // Flush entire framebuffer in one GPU call
+  flushBuffer();
+
+  // Debug HUD (drawn via ctx after flush — avoids polluting framebuffer)
+  const p = state.player;
+  document.getElementById('debug').textContent =
+    `FPS: ${state.fps}\nPlayer: ${Math.floor(p.x)},${Math.floor(p.y)}\nTile: ${Math.floor(p.x/TILE_SIZE)},${Math.floor(p.y/TILE_SIZE)}\n[WASD/Arrows] Move`;
 }
 
+let lastTime = 0;
+
 function loop(timestamp) {
-  const delta = (timestamp - lastTime) / 1000;
+  const delta = Math.min((timestamp - lastTime) / 1000, 0.05); // cap at 50ms
   lastTime = timestamp;
+  state.elapsed += delta;
 
   update(delta);
   render();
