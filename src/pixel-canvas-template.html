@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pixel Canvas Template</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #111;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+  }
+  canvas {
+    display: block;
+    /* Crisp pixel rendering — critical for upscaled pixel art */
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+  }
+</style>
+</head>
+<body>
+<canvas id="screen"></canvas>
+<script>
+'use strict';
+
+// ============================================================
+// CONFIG — adjust these to define your screen
+// ============================================================
+const TILE_SIZE   = 8;    // pixels per tile (logical)
+const COLS        = 20;   // screen width in tiles
+const ROWS        = 18;   // screen height in tiles
+
+const LOGICAL_W   = COLS * TILE_SIZE;  // 160
+const LOGICAL_H   = ROWS * TILE_SIZE;  // 144
+
+// ============================================================
+// SPRITE DEFINITIONS
+// Each sprite is an 8x8 flat array (64 values).
+// Use a hex color string or null for transparent.
+// Row-major order: index = y * 8 + x
+// ============================================================
+const SPRITES = {
+
+  // Example: a simple smiley face
+  smiley: [
+    null,  '#FFD700', '#FFD700', '#FFD700', '#FFD700', '#FFD700', '#FFD700', null,
+    '#FFD700', '#FFD700', '#FFD700', '#FFD700', '#FFD700', '#FFD700', '#FFD700', '#FFD700',
+    '#FFD700', '#111',   '#FFD700', '#FFD700', '#FFD700', '#FFD700', '#111',   '#FFD700',
+    '#FFD700', '#FFD700', '#FFD700', '#FFD700', '#FFD700', '#FFD700', '#FFD700', '#FFD700',
+    '#FFD700', '#FFD700', '#FFD700', '#FFD700', '#FFD700', '#FFD700', '#FFD700', '#FFD700',
+    '#FFD700', '#111',   '#FFD700', '#FFD700', '#FFD700', '#FFD700', '#111',   '#FFD700',
+    '#FFD700', '#FFD700', '#111',   '#111',   '#111',   '#111',   '#FFD700', '#FFD700',
+    null,  '#FFD700', '#FFD700', '#FFD700', '#FFD700', '#FFD700', '#FFD700', null,
+  ],
+
+  // Example: a red box with a cross
+  redX: [
+    '#CC0000', '#CC0000', '#CC0000', '#CC0000', '#CC0000', '#CC0000', '#CC0000', '#CC0000',
+    '#CC0000', '#FF4444', null,      null,      null,      null,      '#FF4444', '#CC0000',
+    '#CC0000', null,      '#FF4444', null,      null,      '#FF4444', null,      '#CC0000',
+    '#CC0000', null,      null,      '#FF4444', '#FF4444', null,      null,      '#CC0000',
+    '#CC0000', null,      null,      '#FF4444', '#FF4444', null,      null,      '#CC0000',
+    '#CC0000', null,      '#FF4444', null,      null,      '#FF4444', null,      '#CC0000',
+    '#CC0000', '#FF4444', null,      null,      null,      null,      '#FF4444', '#CC0000',
+    '#CC0000', '#CC0000', '#CC0000', '#CC0000', '#CC0000', '#CC0000', '#CC0000', '#CC0000',
+  ],
+
+  // Add more sprites here...
+};
+
+// ============================================================
+// CANVAS SETUP & SCALING
+// ============================================================
+const canvas  = document.getElementById('screen');
+const ctx     = canvas.getContext('2d');
+
+canvas.width  = LOGICAL_W;
+canvas.height = LOGICAL_H;
+
+// Disable anti-aliasing on the context (redundant but safe)
+ctx.imageSmoothingEnabled = false;
+
+function fitToWindow() {
+  const scaleX = window.innerWidth  / LOGICAL_W;
+  const scaleY = window.innerHeight / LOGICAL_H;
+  const scale  = Math.min(scaleX, scaleY);          // maintain aspect ratio
+  const displayW = Math.round(LOGICAL_W * scale);
+  const displayH = Math.round(LOGICAL_H * scale);
+  canvas.style.width  = displayW + 'px';
+  canvas.style.height = displayH + 'px';
+}
+
+window.addEventListener('resize', fitToWindow);
+fitToWindow();
+
+// ============================================================
+// DRAWING API
+// ============================================================
+
+// Clear the entire screen with a background color
+function clearScreen(color = '#222034') {
+  ctx.fillStyle = color;
+  ctx.fillRect(0, 0, LOGICAL_W, LOGICAL_H);
+}
+
+// Draw a sprite by name at tile coordinates (tileX, tileY)
+// Optional: pass flipX or flipY booleans
+function drawSprite(name, tileX, tileY, { flipX = false, flipY = false } = {}) {
+  const data = SPRITES[name];
+  if (!data) { console.warn(`Sprite not found: ${name}`); return; }
+
+  const px = tileX * TILE_SIZE;
+  const py = tileY * TILE_SIZE;
+
+  for (let i = 0; i < 64; i++) {
+    const color = data[i];
+    if (color === null) continue;  // transparent
+
+    let sx = i % TILE_SIZE;
+    let sy = Math.floor(i / TILE_SIZE);
+
+    if (flipX) sx = TILE_SIZE - 1 - sx;
+    if (flipY) sy = TILE_SIZE - 1 - sy;
+
+    ctx.fillStyle = color;
+    ctx.fillRect(px + sx, py + sy, 1, 1);
+  }
+}
+
+// Draw a solid tile rectangle (in tile coordinates, in tile units)
+function fillTiles(tileX, tileY, tileW, tileH, color) {
+  ctx.fillStyle = color;
+  ctx.fillRect(
+    tileX * TILE_SIZE,
+    tileY * TILE_SIZE,
+    tileW * TILE_SIZE,
+    tileH * TILE_SIZE
+  );
+}
+
+// Draw a 1-pixel (logical) line between two logical pixel coords
+function drawLine(x0, y0, x1, y1, color) {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(x0 + 0.5, y0 + 0.5);
+  ctx.lineTo(x1 + 0.5, y1 + 0.5);
+  ctx.stroke();
+}
+
+// Optional: render a visible tile grid overlay (debug aid)
+function drawGrid(color = 'rgba(255,255,255,0.05)') {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 0.5;
+  for (let x = 0; x <= COLS; x++) {
+    ctx.beginPath();
+    ctx.moveTo(x * TILE_SIZE, 0);
+    ctx.lineTo(x * TILE_SIZE, LOGICAL_H);
+    ctx.stroke();
+  }
+  for (let y = 0; y <= ROWS; y++) {
+    ctx.beginPath();
+    ctx.moveTo(0, y * TILE_SIZE);
+    ctx.lineTo(LOGICAL_W, y * TILE_SIZE);
+    ctx.stroke();
+  }
+}
+
+// ============================================================
+// GAME LOOP
+// ============================================================
+let lastTime = 0;
+
+function update(delta) {
+  // --- game logic goes here ---
+  // delta = time since last frame in seconds
+}
+
+function render() {
+  clearScreen('#222034');
+
+  // --- place sprites at tile positions ---
+  drawSprite('smiley', 2, 3);
+  drawSprite('redX',   5, 3);
+  drawSprite('smiley', 8, 3, { flipX: true });
+
+  // Optional grid overlay — remove in production
+  drawGrid();
+}
+
+function loop(timestamp) {
+  const delta = (timestamp - lastTime) / 1000;
+  lastTime = timestamp;
+
+  update(delta);
+  render();
+
+  requestAnimationFrame(loop);
+}
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
