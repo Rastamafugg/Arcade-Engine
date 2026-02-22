@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pixel Canvas — Platformer Demo</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #050510;
+    display: flex; align-items: center; justify-content: center;
+    width: 100vw; height: 100vh; overflow: hidden;
+  }
+  canvas { display: block; image-rendering: pixelated; image-rendering: crisp-edges; }
+  #hint {
+    position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%);
+    color: #444; font: 9px monospace; white-space: pre; text-align: center;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<canvas id="screen"></canvas>
+<div id="hint">WASD/ARROWS: move  |  Z/SPACE: jump  |  UP near ladder: climb</div>
+
+<script src="pixel-canvas-engine.js"></script>
+
+<script>
+'use strict';
+
+// ================================================================
+// SPRITES
+// ================================================================
+const SPRITES = {
+  // ---- Background sky tile (two shades for visual depth) ----
+  sky0: [
+    30,30,30,30,30,30,30,30, 30,30,30,30,30,30,30,30,
+    30,30,30,30,30,30,30,30, 30,30,30,30,30,30,30,30,
+    30,30,30,30,30,30,30,30, 30,30,30,30,30,30,30,30,
+    30,30,30,30,30,30,30,30, 30,30,30,30,30,30,30,30,
+  ],
+  // ---- Solid floor / wall tile ----
+  pl_floor: [
+    22,22,22,22,22,22,22,22, 20,20,20,20,20,20,20,20,
+    21,21,21,21,21,21,21,21, 22,22,22,22,22,22,22,22,
+    20,20,20,20,20,20,20,20, 21,21,21,21,21,21,21,21,
+    22,22,22,22,22,22,22,22, 23,23,23,23,23,23,23,23,
+  ],
+  // ---- One-way platform (girder, top 3px solid, rest transparent) ----
+  pl_platform: [
+    21,21,21,21,21,21,21,21, 20,20,20,20,20,20,20,20,
+    22,22,22,22,22,22,22,22, null,null,null,null,null,null,null,null,
+    null,null,null,null,null,null,null,null, null,null,null,null,null,null,null,null,
+    null,null,null,null,null,null,null,null, null,null,null,null,null,null,null,null,
+  ],
+  // ---- Ladder ----
+  pl_ladder: [
+    3,null,null,null,null,null,null,3, 3,null,null,null,null,null,null,3,
+    3,5,5,5,5,5,5,3, 3,null,null,null,null,null,null,3,
+    3,null,null,null,null,null,null,3, 3,null,null,null,null,null,null,3,
+    3,5,5,5,5,5,5,3, 3,null,null,null,null,null,null,3,
+  ],
+  // ---- Donkey Kong ----
+  pl_dk: [
+    null,3,3,3,3,3,3,null, 3,5,3,24,24,3,5,3,
+    3,3,3,3,3,3,3,3, 3,3,4,3,3,4,3,3,
+    null,4,4,4,4,4,4,null, null,4,3,3,3,3,4,null,
+    null,3,null,null,null,null,3,null, null,3,null,null,null,null,3,null,
+  ],
+  // ---- Princess ----
+  pl_princess: [
+    null,null,7,7,7,7,null,null, null,7,6,7,7,6,7,null,
+    null,7,7,7,7,7,7,null, null,27,27,27,27,27,27,null,
+    27,27,27,27,27,27,27,27, null,27,6,6,6,6,27,null,
+    null,null,6,null,null,6,null,null, null,null,6,null,null,6,null,null,
+  ],
+  // ---- Barrel ----
+  pl_barrel: [
+    null,26,26,26,26,26,26,null, 26,27,4,5,5,4,27,26,
+    26,4,5,20,4,5,4,26, 26,5,20,4,4,20,5,26,
+    26,4,5,4,20,4,5,26, 26,4,4,5,5,4,4,26,
+    26,27,4,4,4,4,27,26, null,26,26,26,26,26,26,null,
+  ],
+  // ---- Player idle ----
+  pl_idle: [
+    null,null,6,6,6,6,null,null, null,6,24,6,6,24,6,null,
+    null,6,6,6,6,6,6,null, null,16,16,16,16,16,16,null,
+    16,16,5,16,16,5,16,16, null,16,5,5,5,5,16,null,
+    null,5,null,null,null,null,5,null, null,5,null,null,null,null,5,null,
+  ],
+  // ---- Player walk frame 0 ----
+  pl_walk0: [
+    null,null,6,6,6,6,null,null, null,6,24,6,6,24,6,null,
+    null,6,6,6,6,6,6,null, null,16,16,16,16,16,16,null,
+    16,16,5,16,16,5,16,16, null,16,5,5,5,5,16,null,
+    null,5,5,null,null,5,null,null, null,null,5,null,null,null,null,null,
+  ],
+  // ---- Player walk frame 1 ----
+  pl_walk1: [
+    null,null,6,6,6,6,null,null, null,6,24,6,6,24,6,null,
+    null,6,6,6,6,6,6,null, null,16,16,16,16,16,16,null,
+    16,16,5,16,16,5,16,16, null,16,5,5,5,5,16,null,
+    null,null,null,null,5,5,null,null, null,null,null,null,null,5,null,null,
+  ],
+  // ---- Player jump ----
+  pl_jump: [
+    null,null,6,6,6,6,null,null, null,6,24,6,6,24,6,null,
+    null,6,6,6,6,6,6,null, 16,null,16,16,16,16,null,16,
+    null,16,5,16,16,5,16,null, null,16,5,5,5,5,16,null,
+    null,null,5,null,null,5,null,null, null,null,5,null,null,5,null,null,
+  ],
+  // ---- Player climb ----
+  pl_climb: [
+    null,null,6,6,6,6,null,null, null,6,24,6,6,24,6,null,
+    null,6,6,6,6,6,6,null, null,16,16,16,16,16,16,null,
+    16,null,5,16,16,5,null,16, null,16,5,5,5,5,16,null,
+    null,5,null,null,null,null,5,null, null,null,5,null,null,5,null,null,
+  ],
+};
+
+buildSpriteCache(SPRITES);
+
+// ================================================================
+// SOUND
+// ================================================================
+sound.registerTracks({
+  game: {
+    bpm: 160, loop: true,
+    channels: [
+      { instrument: 'square',
+        notes: 'C5:0.5 E5:0.5 G5:0.5 E5:0.5 C5:0.5 D5:0.5 F5:0.5 D5:0.5 B4:0.5 D5:0.5 F5:0.5 D5:0.5 C5:2' },
+      { instrument: 'triangle',
+        notes: 'C3:2 G3:2 F3:2 G3:2 C3:2 G3:2 A3:2 G3:2 C3:2 G3:2 F3:2 E3:2 C3:4' },
+    ],
+  },
+});
+
+sound.registerSFX({
+  jump:  { bpm:960, channels:[{ instrument:'square',   notes:'C5:0.05 E5:0.05 G5:0.08' }] },
+  die:   { bpm:480, channels:[{ instrument:'square',   notes:'G4:0.1 F4:0.1 E4:0.1 D4:0.15 C4:0.2' }] },
+  win:   { bpm:240, channels:[{ instrument:'square',   notes:'C5:0.15 E5:0.15 G5:0.15 C6:0.4' }] },
+  score: { bpm:960, channels:[{ instrument:'triangle', notes:'E6:0.05 G6:0.08' }] },
+});
+
+// ================================================================
+// PHYSICS CONSTANTS
+// ================================================================
+const GRAVITY    = 300;   // px/s²
+const JUMP_VY    = -140;  // px/s (upward)
+const WALK_SPEED = 55;    // px/s
+const BARREL_VX  = 32;    // px/s horizontal
+const BARREL_SPAWN_RATE = 4.0; // seconds between spawns
+
+// Hitbox for platformer (wider, full-height for barrel hit detection)
+setHitbox(1, 1, 6, 7);
+
+// Platform rows (tile row index in the world grid)
+const PLAT_ROWS = [1, 4, 7, 10, 13];
+
+// ================================================================
+// SCENE BUILDER
+// ================================================================
+function buildPlatformerScene(cols, rows) {
+  const bg  = Array.from({length: rows}, () => Array(cols).fill('sky0'));
+  const obj = Array.from({length: rows}, () => Array(cols).fill(null));
+  const col = Array.from({length: rows}, () => Array(cols).fill(false));
+
+  // Floor (rows 16-17)
+  for (let r = 16; r <= 17; r++)
+    for (let c = 0; c < cols; c++) { bg[r][c] = 'pl_floor'; col[r][c] = true; }
+
+  // Top platform row 1 (full width, includes DK spawn side)
+  for (let c = 0; c < cols; c++) obj[1][c] = 'pl_platform';
+
+  // Alternating platforms (objects layer only — one-way, NOT in collision)
+  // Row 4: right-heavy (cols 5-19), gap left (0-4)
+  for (let c = 5; c < cols; c++) obj[4][c] = 'pl_platform';
+  // Row 7: left-heavy (cols 0-14), gap right (15-19)
+  for (let c = 0; c <= 14; c++) obj[7][c] = 'pl_platform';
+  // Row 10: right-heavy (cols 5-19)
+  for (let c = 5; c < cols; c++) obj[10][c] = 'pl_platform';
+  // Row 13: left-heavy (cols 0-14)
+  for (let c = 0; c <= 14; c++) obj[13][c] = 'pl_platform';
+
+  // Ladders (bridge the vertical gaps between platforms)
+  // Each ladder: from just-above-lower-platform up to just-below-upper-platform
+  // Ladder col 13: floor → row 13 (rows 14-15)
+  for (let r = 14; r <= 15; r++) obj[r][13] = 'pl_ladder';
+  // Ladder col 6: row 13 → row 10 (rows 11-12)
+  for (let r = 11; r <= 12; r++) obj[r][6] = 'pl_ladder';
+  // Ladder col 13: row 10 → row 7 (rows 8-9)
+  for (let r = 8; r <= 9; r++) obj[r][13] = 'pl_ladder';
+  // Ladder col 6: row 7 → row 4 (rows 5-6)
+  for (let r = 5; r <= 6; r++) obj[r][6] = 'pl_ladder';
+  // Ladder col 13: row 4 → row 1 (rows 2-3)
+  for (let r = 2; r <= 3; r++) obj[r][13] = 'pl_ladder';
+
+  // DK and princess (decorative, top area)
+  obj[0][1]  = 'pl_dk';
+  obj[0][18] = 'pl_princess';
+
+  return { bg, objects: obj, collision: col };
+}
+
+const cols = 20, rows = 18;
+const { bg, objects, collision } = buildPlatformerScene(cols, rows);
+
+const SCENE = {
+  worldCols: cols, worldRows: rows,
+  bgColor:   30,
+  playerStart: { tileX: 2, tileY: 14 },
+  music: 'game',
+  layerBG:        bg,
+  layerObjects:   objects,
+  layerCollision: collision,
+  portals: [], npcs: [],
+};
+
+registerScenes({ game: SCENE });
+
+// ================================================================
+// LADDER HELPERS
+// Build a fast Set of ladder tile positions from the objects layer.
+// ================================================================
+const ladderSet = new Set();
+for (let r = 0; r < rows; r++)
+  for (let c = 0; c < cols; c++)
+    if (objects[r][c] === 'pl_ladder') ladderSet.add(`${c},${r}`);
+
+function ladderAt(tx, ty) { return ladderSet.has(`${tx},${ty}`); }
+
+function playerOverlapsLadder(px, py) {
+  // Player center tile
+  const cx = ((px + 4) / TILE_SIZE) | 0;
+  const cy = ((py + 4) / TILE_SIZE) | 0;
+  return ladderAt(cx, cy) || ladderAt(cx, cy - 1);
+}
+
+// ================================================================
+// ONE-WAY PLATFORM COLLISION
+// Returns the snapped Y if the player lands on a platform this frame
+// while falling (dy > 0). Returns null otherwise.
+// ================================================================
+function checkPlatformLand(px, py, newPy) {
+  if (newPy <= py) return null;
+  const tx0 = ((px + HBX) / TILE_SIZE) | 0;
+  const tx1 = ((px + HBX + HBW - 1) / TILE_SIZE) | 0;
+  const oldFeet = py  + HBY + HBH - 1;
+  const newFeet = newPy + HBY + HBH - 1;
+  for (const pr of PLAT_ROWS) {
+    const platTop = pr * TILE_SIZE;
+    if (oldFeet < platTop && newFeet >= platTop) {
+      for (let tx = tx0; tx <= tx1; tx++) {
+        if (objects[pr]?.[tx] === 'pl_platform')
+          return platTop - HBH - HBY;  // snap y so feet rest on platform top
+      }
+    }
+  }
+  return null;
+}
+
+function isOnPlatform(px, py) {
+  const tx0 = ((px + HBX) / TILE_SIZE) | 0;
+  const tx1 = ((px + HBX + HBW - 1) / TILE_SIZE) | 0;
+  const feetTile = ((py + HBY + HBH) / TILE_SIZE) | 0;
+  for (let tx = tx0; tx <= tx1; tx++) {
+    if (objects[feetTile]?.[tx] === 'pl_platform') return true;
+  }
+  return false;
+}
+
+// ================================================================
+// GAME STATE
+// ================================================================
+let score      = 0;
+let lives      = 3;
+let gameState  = 'play'; // 'play' | 'dead' | 'win' | 'over'
+let deadTimer  = 0;
+let winTimer   = 0;
+let barrelTimer = 0;
+let nextBarrelDir = 1; // 1=right, alternates
+let climbing   = false; // player on ladder
+let vy         = 0;    // player vertical velocity (physics)
+let grounded   = false;
+let facingRight = true;
+
+// ================================================================
+// ENTITY INIT
+// ================================================================
+playerId = world.createEntity({
+  persistent: true,
+  player:     true,
+  transform:  { x: 2 * TILE_SIZE, y: 14 * TILE_SIZE },
+  velocity:   { dx: 0, dy: 0, speed: WALK_SPEED },
+  animator:   createAnimator({
+    idle:   { frames: ['pl_idle'],               durations: 0.2  },
+    walk:   { frames: ['pl_walk0', 'pl_walk1'],  durations: 0.16 },
+    jump:   { frames: ['pl_jump'],               durations: 0.2  },
+    climb:  { frames: ['pl_climb'],              durations: 0.3  },
+  }, 'idle'),
+  collider: true,
+});
+
+function spawnBarrel() {
+  // Barrels spawn just below the top platform (row 2), at DK's side (col 2)
+  world.createEntity({
+    transform: { x: 2 * TILE_SIZE, y: 2 * TILE_SIZE },
+    velocity:  { dx: BARREL_VX * nextBarrelDir, dy: 0, speed: 0 },
+    barrel:    { vy: 0, dir: nextBarrelDir },
+    sprite:    { name: 'pl_barrel', flipX: false },
+  });
+  nextBarrelDir *= -1;
+}
+
+// ================================================================
+// PLAYER PHYSICS SYSTEM (replaces sysInput + sysMovement for player)
+// ================================================================
+function sysPlayerPhysics(delta) {
+  if (gameState !== 'play') return;
+
+  const tf   = world.get(playerId, 'transform');
+  const anim = world.get(playerId, 'animator');
+  if (!tf || !anim) return;
+
+  const ax = input.axis();
+  let dx = 0;
+  if (input.held('left')  || ax.x < -0.15) { dx = -WALK_SPEED; facingRight = false; }
+  if (input.held('right') || ax.x >  0.15) { dx =  WALK_SPEED; facingRight = true;  }
+
+  const wantClimb = input.held('up') || ax.y < -0.15;
+  const wantDescend = input.held('down') || ax.y >  0.15;
+  const canGrabLadder = playerOverlapsLadder(tf.x, tf.y);
+
+  // --- Ladder mode ---
+  if (climbing) {
+    if (!canGrabLadder) { climbing = false; }
+    else {
+      vy = 0;
+      const climbDy = wantClimb ? -WALK_SPEED * 0.7 : wantDescend ? WALK_SPEED * 0.7 : 0;
+      tf.y += climbDy * delta;
+      tf.y  = Math.max(0, Math.min(worldState.h - TILE_SIZE, tf.y));
+      tf.x += dx * delta;
+      tf.x  = Math.max(0, Math.min(worldState.w - TILE_SIZE, tf.x));
+      animatorPlay(anim, 'climb');
+      return;
+    }
+  }
+
+  // Grab ladder when pressing up near one
+  if (wantClimb && canGrabLadder && !climbing) {
+    climbing = true;
+    vy = 0;
+    return;
+  }
+
+  // --- Normal gravity physics ---
+  vy += GRAVITY * delta;
+
+  // Jump
+  if ((input.pressed('action') || input.pressed('up')) && (grounded || isOnPlatform(tf.x, tf.y))) {
+    vy = JUMP_VY;
+    grounded = false;
+    sound.playSFX('jump');
+  }
+
+  // Horizontal move with wall collision
+  const newX = Math.max(0, Math.min(worldState.w - TILE_SIZE, tf.x + dx * delta));
+  if (!collidesAt(newX, tf.y)) tf.x = newX;
+
+  // Vertical move: floor (isSolid) + one-way platforms
+  const desiredY = tf.y + vy * delta;
+  const platSnap = checkPlatformLand(tf.x, tf.y, desiredY);
+
+  if (platSnap !== null) {
+    tf.y = platSnap; vy = 0; grounded = true;
+  } else {
+    const clampedY = Math.max(0, Math.min(worldState.h - TILE_SIZE, desiredY));
+    if (collidesAt(tf.x, clampedY)) {
+      if (vy > 0) grounded = true;
+      vy = 0;
+      // tf.y stays unchanged — blocked by solid tile
+    } else {
+      tf.y = clampedY;
+      grounded = isGrounded(tf.x, tf.y) || isOnPlatform(tf.x, tf.y);
+    }
+  }
+
+  // Clamp to floor at bottom
+  if (tf.y + TILE_SIZE >= worldState.h - TILE_SIZE) {
+    tf.y = worldState.h - 2 * TILE_SIZE;
+    vy = 0; grounded = true;
+  }
+
+  // Animation
+  if (!grounded && !climbing) {
+    animatorPlay(anim, 'jump');
+  } else if (dx !== 0) {
+    animatorPlay(anim, 'walk');
+  } else {
+    animatorPlay(anim, 'idle');
+  }
+  anim.flipX = !facingRight;
+
+  // Win condition: player reaches top platform (row 1)
+  const playerTileY = (tf.y / TILE_SIZE) | 0;
+  if (playerTileY <= 1) {
+    gameState = 'win';
+    winTimer  = 3.5;
+    score += 1000;
+    sound.playSFX('win');
+  }
+}
+
+// ================================================================
+// BARREL PHYSICS SYSTEM
+// Barrels use gravity + one-way platform collision.
+// Each barrel entity has a 'barrel' component with { vy, dir }.
+// ================================================================
+function sysBarrelPhysics(delta) {
+  for (const id of world.query('transform', 'barrel')) {
+    const tf  = world.get(id, 'transform');
+    const b   = world.get(id, 'barrel');
+
+    b.vy += GRAVITY * delta;
+
+    // Horizontal
+    const newX = tf.x + b.dir * BARREL_VX * delta;
+    // Barrel hits screen edge — destroy
+    if (newX < 0 || newX + TILE_SIZE > worldState.w) {
+      world.destroyEntity(id); continue;
+    }
+    tf.x = newX;
+
+    // Vertical
+    const newY = tf.y + b.vy * delta;
+    const snap = checkPlatformLand(tf.x, tf.y, newY);
+    if (snap !== null) {
+      tf.y = snap; b.vy = 0;
+    } else {
+      const clampedY = Math.min(worldState.h - TILE_SIZE, newY);
+      if (collidesAt(tf.x, clampedY)) {
+        tf.y = tf.y; b.vy = 0; // hit floor — stop
+      } else {
+        tf.y = clampedY;
+      }
+    }
+
+    // Fell off bottom — destroy
+    if (tf.y + TILE_SIZE >= worldState.h - TILE_SIZE) {
+      score += 50;
+      sound.playSFX('score');
+      world.destroyEntity(id);
+      continue;
+    }
+  }
+}
+
+// ================================================================
+// COLLISION DETECTION: player vs barrels
+// ================================================================
+function sysBarrelPlayerCollision() {
+  if (gameState !== 'play') return;
+  const ptf = world.get(playerId, 'transform');
+  if (!ptf) return;
+  const px = ptf.x + HBX, py = ptf.y + HBY;
+
+  for (const id of world.query('barrel', 'transform')) {
+    const btf = world.get(id, 'transform');
+    const bx = btf.x + 1, by = btf.y + 1;
+    // Simple AABB overlap
+    if (px < bx + 6 && px + HBW > bx &&
+        py < by + 6 && py + HBH > by) {
+      gameState = 'dead';
+      deadTimer = 2.5;
+      lives--;
+      sound.playSFX('die');
+      return;
+    }
+  }
+}
+
+// ================================================================
+// BARREL SPAWNER
+// ================================================================
+function sysBarrelSpawner(delta) {
+  if (gameState !== 'play') return;
+  barrelTimer += delta;
+  if (barrelTimer >= BARREL_SPAWN_RATE) {
+    barrelTimer = 0;
+    spawnBarrel();
+  }
+}
+
+// ================================================================
+// GAME STATE MANAGER (dead / win / over transitions)
+// ================================================================
+function sysGameState(delta) {
+  if (gameState === 'dead') {
+    deadTimer -= delta;
+    if (deadTimer <= 0) {
+      if (lives <= 0) {
+        gameState = 'over';
+      } else {
+        // Respawn
+        gameState = 'play';
+        climbing  = false;
+        vy        = 0;
+        grounded  = false;
+        barrelTimer = 0;
+        // Destroy all barrels
+        for (const id of world.query('barrel')) world.destroyEntity(id);
+        // Reset player position
+        const tf = world.get(playerId, 'transform');
+        if (tf) { tf.x = 2 * TILE_SIZE; tf.y = 14 * TILE_SIZE; }
+      }
+    }
+  } else if (gameState === 'win') {
+    winTimer -= delta;
+    if (winTimer <= 0) {
+      // Restart with next round (faster barrels eventually)
+      gameState = 'play';
+      climbing  = false;
+      vy = 0; grounded = false;
+      barrelTimer = 0;
+      for (const id of world.query('barrel')) world.destroyEntity(id);
+      const tf = world.get(playerId, 'transform');
+      if (tf) { tf.x = 2 * TILE_SIZE; tf.y = 14 * TILE_SIZE; }
+    }
+  }
+}
+
+// ================================================================
+// HUD RENDERING
+// ================================================================
+function renderHUD() {
+  // Top strip background
+  fillRectPx(0, 0, LOGICAL_W, 8, 0);
+
+  drawText(`SCORE:${score}`, 2, 1, 7);
+
+  const livesStr = `LIVES:${Math.max(0, lives)}`;
+  drawText(livesStr, LOGICAL_W - livesStr.length * CHAR_W - 2, 1, 27);
+}
+
+function renderOverlay(elapsed) {
+  if (gameState === 'dead' && lives > 0) {
+    drawBox(44, 60, 72, 24, 1, 27);
+    drawText('OH NO!', 58, 65, 27);
+    drawText(`${lives} LIVES LEFT`, 48, 74, 20);
+  } else if (gameState === 'over') {
+    drawBox(36, 56, 88, 32, 1, 26);
+    drawText('GAME OVER', 50, 61, 26);
+    drawText(`SCORE: ${score}`, 50, 71, 7);
+    if (Math.floor(elapsed * 2) % 2 === 0) drawText('Z TO RETRY', 48, 80, 21);
+  } else if (gameState === 'win') {
+    drawBox(36, 56, 88, 32, 1, 7);
+    drawText('YOU WIN!', 54, 61, 7);
+    drawText(`+1000 PTS`, 54, 71, 20);
+    drawText('NEXT ROUND...', 42, 80, 21);
+  }
+
+  // Retry on Game Over
+  if (gameState === 'over' && input.pressed('action')) {
+    score = 0; lives = 3;
+    gameState = 'play';
+    climbing = false; vy = 0; grounded = false; barrelTimer = 0;
+    for (const id of world.query('barrel')) world.destroyEntity(id);
+    const tf = world.get(playerId, 'transform');
+    if (tf) { tf.x = 2 * TILE_SIZE; tf.y = 14 * TILE_SIZE; }
+  }
+}
+
+// ================================================================
+// MAIN LOOP
+// ================================================================
+let elapsed = 0, lastTime = 0;
+let fps = 0, fpsTimer = 0, fpsFrames = 0;
+
+// Load scene (no save/load for this demo)
+loadScene('game');
+
+// Manually set player position after loadScene (scene playerStart override)
+{
+  const tf = world.get(playerId, 'transform');
+  if (tf) { tf.x = 2 * TILE_SIZE; tf.y = 14 * TILE_SIZE; }
+}
+
+function loop(ts) {
+  const delta = Math.min((ts - lastTime) / 1000, 0.05);
+  lastTime = ts; elapsed += delta;
+  fpsFrames++; fpsTimer += delta;
+  if (fpsTimer >= 0.5) { fps = Math.round(fpsFrames / fpsTimer); fpsTimer = fpsFrames = 0; }
+
+  engineTick(delta);
+  input.update();
+
+  // Systems (no camera scroll — camera stays at 0,0 for single screen)
+  sysGameState(delta);
+  sysPlayerPhysics(delta);
+  sysBarrelSpawner(delta);
+  sysBarrelPhysics(delta);
+  sysBarrelPlayerCollision();
+  sysAnimation(delta);
+
+  // Render
+  clearBuffer(30); // deep dark blue sky
+  drawTilemap(SCENE.layerBG,      elapsed);
+  drawTilemap(SCENE.layerObjects, elapsed);
+  sysRender();
+  renderHUD();
+  renderOverlay(elapsed);
+  renderSaveNote();
+  flushBuffer();
+
+  requestAnimationFrame(loop);
+}
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

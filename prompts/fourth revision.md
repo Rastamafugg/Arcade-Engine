@@ -1,0 +1,3 @@
+This is my current pixel canvas-based arcade engine.  The example in the engine template represents a "Legend of Zelda"-style top-down game world.  I want to refactor the engine into a separate JavaScript source file, linked from the HTML source by a reference path.
+
+After this, I want to create a second example HTML that demonstrates a single-screen profile game, such as Donkey Kong or Pac-Man, using the same JavaScript library.
