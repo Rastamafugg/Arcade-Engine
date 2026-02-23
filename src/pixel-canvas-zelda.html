@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Pixel Canvas v5 — Overworld Demo</title>
+<title>Pixel Canvas v5.1 — Overworld Demo</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -27,17 +27,17 @@
 <body>
 <canvas id="screen"></canvas>
 <div id="debug"></div>
-<div id="hint">WASD/ARROWS: move  |  Z/SPACE: talk  |  F5: save  |  F9: load</div>
+<div id="hint">WASD: move  |  Z: talk/open/use item  |  E/Q: cycle items  |  M: minimap  |  F5: save  |  F9: load</div>
 
 <script src="pixel-canvas-engine.js"></script>
 
 <script>
 'use strict';
+
 // ================================================================
 // SPRITES
 // ================================================================
 const SPRITES = {
-  // Terrain
   grass: [
      9, 9, 8, 9, 9, 9, 8, 9,   8, 9, 9, 9, 8, 9, 9, 8,
      9, 9, 8, 9, 9, 8, 9, 9,  11,11,11, 9,11,11,11,11,
@@ -80,7 +80,6 @@ const SPRITES = {
     15,18,18,18,15,18,18,18,  18,15,18,18,18,15,18,18,
     18,18,18,17,18,18,18,17,  18,18,17,18,18,18,17,18,
   ],
-  // Decor
   tree: [
     null,null, 8,null,null, 8,null,null,
     null, 8,   8,  8,  8,  8,  8,null,
@@ -121,7 +120,6 @@ const SPRITES = {
     null,null,25,25,25,null,null,null,
     null,null,null,null,null,null,null,null,
   ],
-  // Collectibles
   coin_item: [
     null,null, 7, 7, 7, 7,null,null,
     null, 7,  20, 7, 7, 7, 7,null,
@@ -152,7 +150,28 @@ const SPRITES = {
     null,null,null, 7,null,null,null,null,
     null,null,null,null,null,null,null,null,
   ],
-  // NPCs
+  // Bomb — consumable item registered with a use handler
+  bomb_item: [
+    null,null,null, 3,null,null,null,null,
+    null,null, 2,   2, 3,null,null,null,
+    null, 2,  26,  26,  2,null,null,null,
+     2,  26,  27,  26,  26,  2,null,null,
+     2,  26,  26,  26,  26,  2,null,null,
+    null, 2,  26,  26,  2,null,null,null,
+    null,null, 2,   2,null,null,null,null,
+    null,null,null,null,null,null,null,null,
+  ],
+  // Potion — consumable healing item
+  potion_item: [
+    null,null,null,20,20,null,null,null,
+    null,null,20, 20,20, 20,null,null,
+    null,null,20, 18,18, 20,null,null,
+    null,20,  18, 18,18,  18,20,null,
+    null,20,  18, 18,18,  18,20,null,
+    null,20,  18, 18,18,  18,20,null,
+    null,null,20, 20,20, 20,null,null,
+    null,null,null,20,20,null,null,null,
+  ],
   npc_a: [
     null,null,  7,  7,  7,  7,null,null,
     null,  7, 24,  7,  7, 24,  7,null,
@@ -173,7 +192,6 @@ const SPRITES = {
     null,  6,null,null,null,null,  6,null,
     null,  6,null,null,null,null,  6,null,
   ],
-  // Player animation frames
   player_d0: [
     null,null,  6,  6,  6,  6,null,null,
     null,  6, 24,  6,  6, 24,  6,null,
@@ -280,14 +298,22 @@ sound.registerTracks({
 });
 
 sound.registerSFX({
-  confirm:  { bpm:960, channels:[{ instrument:'square',   notes:'C5:0.1 E5:0.1 G5:0.2' }] },
-  dialog:   { bpm:960, channels:[{ instrument:'square',   notes:'C6:0.05' }] },
-  portal:   { bpm:480, channels:[{ instrument:'sine',     notes:'A4:0.1 C#5:0.1 E5:0.1 A5:0.2 R:0.1 A6:0.3' }] },
-  save:     { bpm:960, channels:[{ instrument:'square',   notes:'G5:0.08 B5:0.08 D6:0.08 G6:0.15' }] },
-  cancel:   { bpm:960, channels:[{ instrument:'triangle', notes:'E5:0.1 C5:0.1' }] },
-  coin:     { bpm:960, channels:[{ instrument:'square',   notes:'A5:0.06 C6:0.08 E6:0.12' }] },
-  hurt:     { bpm:480, channels:[{ instrument:'square',   notes:'A4:0.06 G4:0.1' }] },
-  heal:     { bpm:960, channels:[{ instrument:'triangle', notes:'E5:0.08 G5:0.08 C6:0.15' }] },
+  confirm:     { bpm:960, channels:[{ instrument:'square',   notes:'C5:0.1 E5:0.1 G5:0.2' }] },
+  dialog:      { bpm:960, channels:[{ instrument:'square',   notes:'C6:0.05' }] },
+  portal:      { bpm:480, channels:[{ instrument:'sine',     notes:'A4:0.1 C#5:0.1 E5:0.1 A5:0.2 R:0.1 A6:0.3' }] },
+  save:        { bpm:960, channels:[{ instrument:'square',   notes:'G5:0.08 B5:0.08 D6:0.08 G6:0.15' }] },
+  cancel:      { bpm:960, channels:[{ instrument:'triangle', notes:'E5:0.1 C5:0.1' }] },
+  coin:        { bpm:960, channels:[{ instrument:'square',   notes:'A5:0.06 C6:0.08 E6:0.12' }] },
+  hurt:        { bpm:480, channels:[{ instrument:'square',   notes:'A4:0.06 G4:0.1' }] },
+  heal:        { bpm:960, channels:[{ instrument:'triangle', notes:'E5:0.08 G5:0.08 C6:0.15' }] },
+  // Chest open: rising arpeggio
+  chest_open:  { bpm:480, channels:[{ instrument:'square',   notes:'C5:0.08 E5:0.08 G5:0.08 C6:0.2' },
+                                     { instrument:'triangle', notes:'C3:0.44' }] },
+  // Bomb: short rumble
+  bomb:        { bpm:240, channels:[{ instrument:'square',   notes:'G3:0.1 F3:0.1 E3:0.1 D3:0.15' },
+                                     { instrument:'triangle', notes:'C2:0.45' }] },
+  // Potion: gentle shimmer
+  potion:      { bpm:960, channels:[{ instrument:'sine',     notes:'E5:0.08 G5:0.08 B5:0.08 E6:0.15' }] },
 });
 
 // ================================================================
@@ -309,15 +335,18 @@ setNpcClipFactory(sprite => ({
 
 // ================================================================
 // COLLECTIBLE SYSTEM
-// Items are ECS entities with a 'pickup' component.
-// Checked against player position each frame.
 // ================================================================
-function spawnPickup(worldX, worldY, type) {
-  return world.createEntity({
-    transform: { x: worldX, y: worldY },
+const _pickupFlags = new Map();
+
+function spawnPickupFlagged(wx, wy, type, flagName) {
+  if (getFlag(flagName)) return;
+  const id = world.createEntity({
+    transform: { x: wx, y: wy },
     sprite:    { name: type + '_item', flipX: false },
     pickup:    { type, collected: false },
   });
+  _pickupFlags.set(id, flagName);
+  return id;
 }
 
 function sysPickups() {
@@ -344,9 +373,10 @@ function sysPickups() {
         case 'key':
           setFlag('hasKey');
           hud.setItem(0, 'key_item');
+          hud.selectedSlot = 0;
           sound.playSFX('confirm');
           emitBurst(tf.x + 4, tf.y + 4, 'levelup');
-          showNote('KEY OBTAINED!');
+          showNote('KEY OBTAINED! [E/Q to cycle items]');
           break;
       }
       world.destroyEntity(id);
@@ -354,16 +384,24 @@ function sysPickups() {
   }
 }
 
+function sysPickupFlags() {
+  for (const [id, flagName] of [..._pickupFlags]) {
+    if (!world.has(id, 'pickup')) {
+      setFlag(flagName);
+      _pickupFlags.delete(id);
+    }
+  }
+}
+
 // ================================================================
-// FOOTSTEP PARTICLE EMITTER
+// FOOTSTEP PARTICLES
 // ================================================================
 let _footTimer = 0;
 function sysFootsteps(delta) {
   const vel = world.get(playerId, 'velocity');
   const tf  = world.get(playerId, 'transform');
   if (!vel || !tf) return;
-  const moving = vel.dx !== 0 || vel.dy !== 0;
-  if (!moving) { _footTimer = 0; return; }
+  if (vel.dx === 0 && vel.dy === 0) { _footTimer = 0; return; }
   _footTimer += delta;
   if (_footTimer >= 0.18) {
     _footTimer = 0;
@@ -372,7 +410,7 @@ function sysFootsteps(delta) {
 }
 
 // ================================================================
-// PORTAL SPARKLE EMITTER
+// PORTAL SPARKLES
 // ================================================================
 let _portalTimer = 0;
 function sysPortalSparkles(delta) {
@@ -381,10 +419,60 @@ function sysPortalSparkles(delta) {
   _portalTimer = 0;
   const portals = _scenes[worldState.currentScene]?.portals ?? [];
   for (const p of portals) {
-    const wx = p.tileX * TILE_SIZE + 4;
-    const wy = p.tileY * TILE_SIZE + 4;
-    emitBurst(wx, wy, 'sparkle');
+    emitBurst(p.tileX * TILE_SIZE + 4, p.tileY * TILE_SIZE + 4, 'sparkle');
   }
+}
+
+// ================================================================
+// ITEM USE HANDLERS
+//
+// key_item  — no active use effect; it's consumed automatically
+//             when the player enters the locked cave chamber.
+//             The handler just informs the player.
+//
+// bomb_item — explosion burst + particle damage display.
+//
+// potion_item — restores 4 HP, consumed on use.
+// ================================================================
+
+// Called after all items are potentially placed in slots.
+function registerAllItemUseHandlers() {
+
+  // Key: passive item. Pressing Z while selected shows a hint.
+  hud.registerItemUse('key_item', (slot) => {
+    showNote('USE THE KEY NEAR A LOCKED DOOR');
+    return false; // suppress default SFX
+  });
+
+  // Bomb: deals area-burst effect (cosmetic here), consumes item.
+  hud.registerItemUse('bomb_item', (slot) => {
+    const ptf = world.get(playerId, 'transform');
+    if (!ptf) return;
+    sound.playSFX('bomb');
+    emitBurst(ptf.x + 4, ptf.y + 4, 'hit');
+    emitBurst(ptf.x + 4, ptf.y + 4, 'smoke');
+    showNote('BOOM!');
+    // Remove from inventory and deselect.
+    hud.clearItem(slot);
+    hud.selectedSlot = null;
+    return false; // suppress default SFX (we played bomb)
+  });
+
+  // Potion: restore 4 HP, consume item.
+  hud.registerItemUse('potion_item', (slot) => {
+    if (hud.hp >= hud.maxHp) {
+      showNote('ALREADY AT FULL HP');
+      return false;
+    }
+    hud.addHp(4);
+    sound.playSFX('potion');
+    const ptf = world.get(playerId, 'transform');
+    if (ptf) emitBurst(ptf.x + 4, ptf.y + 4, 'sparkle');
+    showNote('+4 HP!');
+    hud.clearItem(slot);
+    hud.selectedSlot = null;
+    return false;
+  });
 }
 
 // ================================================================
@@ -445,11 +533,9 @@ const { bg: owBg, objects: owObj, collision: owCol } = buildOverworld(OW_COLS, O
 const { bg: cvBg, objects: cvObj, collision: cvCol } = buildCave(CAVE_COLS, CAVE_ROWS);
 
 // ================================================================
-// NPC DIALOG BRANCHES — flag-gated
-// Villager has four dialogue states based on quest progress.
+// NPC DIALOG BRANCHES
 // ================================================================
 const VILLAGER_BRANCHES = [
-  // Phase 4: found the crystal — celebration branch
   {
     requires: ['foundCrystal'],
     lines: [
@@ -457,11 +543,10 @@ const VILLAGER_BRANCHES = [
       'TAKE THIS AS THANKS\nFOR YOUR BRAVERY.',
     ],
     setFlags:   ['rewarded'],
-    clearFlags: ['foundCrystal'],  // prevent repeating reward
+    clearFlags: ['foundCrystal'],
     addCoins:   5,
     emit:       { x: 12*8+4, y: 12*8+4, preset: 'levelup' },
   },
-  // Phase 3: entered cave, has key
   {
     requires: ['enteredCave', 'hasKey'],
     excludes: ['foundCrystal'],
@@ -470,7 +555,6 @@ const VILLAGER_BRANCHES = [
       'THE CRYSTAL CHAMBER\nLIES DEEP WITHIN.\nGOOD LUCK!',
     ],
   },
-  // Phase 2: entered cave but no key
   {
     requires: ['enteredCave'],
     excludes: ['hasKey', 'foundCrystal'],
@@ -479,7 +563,6 @@ const VILLAGER_BRANCHES = [
       'DID YOU FIND ANYTHING\nINSIDE? I HEAR THERE\nIS A HIDDEN KEY...',
     ],
   },
-  // Phase 1: first contact, gives coin reward
   {
     excludes: ['metVillager'],
     lines: [
@@ -489,21 +572,15 @@ const VILLAGER_BRANCHES = [
     ],
     setFlags: ['metVillager'],
     addCoins: 3,
-    runScript: [
-      { cmd:'sfx', name:'coin' },
-    ],
+    runScript: [{ cmd:'sfx', name:'coin' }],
   },
-  // Phase 0: default (already met, no new info)
   {
-    lines: [
-      'BE CAREFUL OUT THERE.\nAND KEEP AN EYE ON\nTHAT CAVE PORTAL.',
-    ],
+    lines: ['BE CAREFUL OUT THERE.\nAND KEEP AN EYE ON\nTHAT CAVE PORTAL.'],
   },
 ];
 
 // ================================================================
-// CAVE CUTSCENE — fires once on first entry
-// Sage walks toward player, delivers intro dialog, rewards health.
+// CAVE ENTRY CUTSCENE
 // ================================================================
 function buildCaveEntryCutscene(sageId) {
   return [
@@ -524,21 +601,55 @@ function buildCaveEntryCutscene(sageId) {
   ];
 }
 
+// ================================================================
+// SCENES
+// ================================================================
 const SCENE_DATA = {
   overworld: (() => {
-    const cols = OW_COLS, rows = OW_ROWS;
     return {
-      worldCols: cols, worldRows: rows, bgColor: 0,
+      worldCols: OW_COLS, worldRows: OW_ROWS, bgColor: 0,
       playerStart: { tileX: 15, tileY: 15 },
       music: 'overworld',
       layerBG: owBg, layerObjects: owObj, layerCollision: owCol,
       portals: [
         { tileX: 35, tileY: 8, targetScene: 'cave', targetTileX: 3, targetTileY: 8 },
       ],
+      // ---- Chests in the overworld ----
+      // Chest 1: near the village, drops a bomb.
+      // Chest 2: inside the stone ruins, drops a potion.
+      chests: [
+        {
+          tileX: 14, tileY: 20, flagName: 'chest_ow_bomb',
+          loot: [
+            {
+              sprite: 'bomb_item',
+              label: 'BOMB OBTAINED! [E/Q: cycle  Z: use]',
+              onPickup() {
+                // Put bomb in slot 1 (or first empty slot).
+                const slot = hud.items.indexOf(null);
+                if (slot >= 0) { hud.setItem(slot, 'bomb_item'); hud.selectedSlot = slot; }
+              },
+            },
+          ],
+        },
+        {
+          tileX: 9, tileY: 10, flagName: 'chest_ow_potion',
+          loot: [
+            {
+              sprite: 'potion_item',
+              label: 'POTION OBTAINED! [Z: use to restore HP]',
+              onPickup() {
+                const slot = hud.items.indexOf(null);
+                if (slot >= 0) { hud.setItem(slot, 'potion_item'); hud.selectedSlot = slot; }
+              },
+            },
+          ],
+        },
+      ],
       npcs: [
         {
           tileX: 12, tileY: 12, sprite: 'npc_a', name: 'VILLAGER',
-          dialog:         ['...'],    // fallback (overridden by branches)
+          dialog:         ['...'],
           dialogBranches: VILLAGER_BRANCHES,
           patrol: {
             speed: 20, waypointIdx: 0,
@@ -547,7 +658,7 @@ const SCENE_DATA = {
         },
         {
           tileX: 7, tileY: 10, sprite: 'npc_b', name: 'SCHOLAR',
-          dialog:         ['AH, A NEW FACE!'],  // fallback
+          dialog:         ['AH, A NEW FACE!'],
           dialogBranches: [
             {
               requires: ['rewarded'],
@@ -561,32 +672,62 @@ const SCENE_DATA = {
             {
               lines: [
                 'AH, A NEW FACE!',
-                'PRESS Z NEAR ANY NPC\nTO SPEAK WITH THEM.',
+                'PRESS Z NEAR A CHEST\nOR NPC TO INTERACT.',
+                'E/Q CYCLES ITEMS.\nZ USES THE SELECTED ITEM.',
+                'M TOGGLES THE MINIMAP.',
                 'F5 SAVES, F9 LOADS.',
               ],
             },
           ],
         },
       ],
-      // Called every time this scene loads
       onEnter() {
-        // Spawn overworld pickups if not already collected
-        if (!getFlag('coinOW1')) spawnPickup(10*8, 8*8, 'coin');
-        if (!getFlag('coinOW2')) spawnPickup(18*8, 20*8, 'coin');
-        if (!getFlag('heartOW'))  spawnPickup(25*8, 6*8, 'heart');
+        spawnPickupFlagged(10*8,  8*8, 'coin',  'coinOW1');
+        spawnPickupFlagged(18*8, 20*8, 'coin',  'coinOW2');
+        spawnPickupFlagged(25*8,  6*8, 'heart', 'heartOW');
       },
     };
   })(),
 
   cave: (() => {
-    const cols = CAVE_COLS, rows = CAVE_ROWS;
     return {
-      worldCols: cols, worldRows: rows, bgColor: 30,
+      worldCols: CAVE_COLS, worldRows: CAVE_ROWS, bgColor: 30,
       playerStart: { tileX: 3, tileY: 8 },
       music: 'cave',
       layerBG: cvBg, layerObjects: cvObj, layerCollision: cvCol,
       portals: [
         { tileX: 1, tileY: 8, targetScene: 'overworld', targetTileX: 34, targetTileY: 8 },
+      ],
+      // ---- Chest in the cave: drops the key ----
+      chests: [
+        {
+          tileX: 11, tileY: 6, flagName: 'chest_cave_key',
+          loot: [
+            {
+              sprite: 'key_item',
+              label: 'KEY OBTAINED!',
+              onPickup() {
+                setFlag('hasKey');
+                const slot = hud.items.indexOf(null);
+                if (slot >= 0) { hud.setItem(slot, 'key_item'); hud.selectedSlot = slot; }
+              },
+            },
+          ],
+        },
+        // Second cave chest: a bonus potion for the return trip.
+        {
+          tileX: 16, tileY: 14, flagName: 'chest_cave_potion',
+          loot: [
+            {
+              sprite: 'potion_item',
+              label: 'POTION FOUND IN THE DEPTHS!',
+              onPickup() {
+                const slot = hud.items.indexOf(null);
+                if (slot >= 0) { hud.setItem(slot, 'potion_item'); hud.selectedSlot = slot; }
+              },
+            },
+          ],
+        },
       ],
       npcs: [
         {
@@ -594,18 +735,19 @@ const SCENE_DATA = {
           dialog:         ['...'],
           dialogBranches: [
             {
-              requires: ['enteredCave'],
-              excludes: ['foundCrystal'],
-              lines: [
-                'THE CRYSTAL LIES\nFURTHER IN.',
-                'FIND THE KEY AND THE\nCHAMBER WILL OPEN.',
-              ],
-            },
-            {
               requires: ['foundCrystal'],
               lines: ['YOU FOUND IT! RETURN\nTO THE VILLAGE AND\nTELL THE VILLAGER.'],
             },
-            // First-visit branch has no requires — but onEnter handles the cutscene.
+            {
+              requires: ['enteredCave', 'hasKey'],
+              excludes: ['foundCrystal'],
+              lines: ['THE CRYSTAL LIES\nFURTHER IN.', 'THE KEY WILL OPEN\nTHE CHAMBER.'],
+            },
+            {
+              requires: ['enteredCave'],
+              excludes: ['hasKey'],
+              lines: ['A CHEST LIES TO THE\nNORTH-EAST. THE KEY\nINSIDE OPENS ALL.'],
+            },
             {
               lines: ['SEEK THE CRYSTAL\nTHAT LIES WITHIN\nTHESE WALLS.'],
             },
@@ -613,19 +755,15 @@ const SCENE_DATA = {
         },
       ],
       onEnter() {
-        // Spawn cave pickups
-        if (!getFlag('keyCave'))    spawnPickup(10*8, 6*8, 'key');
-        if (!getFlag('crystalCave')) spawnPickup(13*8, 8*8, 'coin');
-        if (!getFlag('heartCave'))   spawnPickup(8*8, 14*8, 'heart');
+        spawnPickupFlagged(13*8, 8*8, 'coin',  'crystalCave');
+        spawnPickupFlagged( 8*8,14*8, 'heart', 'heartCave');
 
-        // First cave entry: run the cutscene after NPCs are spawned
         if (!getFlag('enteredCave')) {
-          // Find the sage NPC entity (most recently spawned with npcData.name='CAVE SAGE')
           const sageId = world.query('npcData').find(
             id => world.get(id,'npcData').name === 'CAVE SAGE'
           );
           if (sageId !== undefined) {
-            setTimeout(() => cutscene.run(buildCaveEntryCutscene(sageId)), 100);
+            setTimeout(() => cutscene.run(buildCaveEntryCutscene(sageId)), 80);
           }
         }
       },
@@ -634,10 +772,11 @@ const SCENE_DATA = {
 };
 
 registerScenes(SCENE_DATA);
-setSaveKey('pixelCanvas_zelda_v5');
+setSaveKey('pixelCanvas_zelda_v51');
 
-// Quest watcher: picking up the key and being in the cave sets foundCrystal
-// (simplified — in a real game you'd have a proper puzzle/boss)
+// ================================================================
+// QUEST WATCHERS
+// ================================================================
 onFlags(['hasKey', 'enteredCave'], () => {
   if (!getFlag('foundCrystal')) {
     setFlag('foundCrystal');
@@ -646,9 +785,6 @@ onFlags(['hasKey', 'enteredCave'], () => {
     emitBurst(13*8+4, 8*8+4, 'levelup');
   }
 });
-
-// Track coin pickup flags so we don't respawn on re-entry
-onFlags(['coinOW1'], () => {}, { once: false });  // placeholder to show pattern
 
 // ================================================================
 // HUD SETUP
@@ -669,6 +805,17 @@ playerId = world.createEntity({
   collider:   true,
 });
 
+// Register item use handlers (after playerId is set so handlers can read transform).
+registerAllItemUseHandlers();
+
+// ================================================================
+// MINIMAP TOGGLE (M key)
+// ================================================================
+let minimapVisible = true;
+window.addEventListener('keydown', e => {
+  if (e.code === 'KeyM') minimapVisible = !minimapVisible;
+});
+
 // ================================================================
 // MAIN LOOP
 // ================================================================
@@ -677,54 +824,6 @@ let fps = 0, fpsTimer = 0, fpsFrames = 0;
 
 loadScene('overworld');
 if (saveLoad.hasSave()) { if (saveLoad.load()) showNote('SAVE LOADED'); }
-
-// Track which pickup entities were collected this session (flag by position)
-// Simple approach: pickups destroyed when collected, re-spawned on scene entry
-// gated by a flag set at collection time. Gate-setting is manual per pickup type:
-world.query('pickup').forEach(id => {}); // no-op, just showing access pattern
-
-// Coin collection flags (patched on pickup):
-const _origAddCoins = hud.addCoins.bind(hud);
-// Track collectible position → flag linkage in spawnPickup
-const _pickupFlags = new Map();  // entityId → flagName
-
-function spawnPickupFlagged(wx, wy, type, flagName) {
-  if (getFlag(flagName)) return; // already collected
-  const id = spawnPickup(wx, wy, type);
-  _pickupFlags.set(id, flagName);
-  return id;
-}
-
-function sysPickupFlags() {
-  for (const [id, flagName] of [..._pickupFlags]) {
-    if (!world.has(id, 'pickup')) {
-      // Entity was destroyed → mark flag as collected
-      setFlag(flagName);
-      _pickupFlags.delete(id);
-    }
-  }
-}
-
-// Override onEnter to use flagged pickups
-SCENE_DATA.overworld.onEnter = function() {
-  spawnPickupFlagged(10*8, 8*8,  'coin',  'coinOW1');
-  spawnPickupFlagged(18*8, 20*8, 'coin',  'coinOW2');
-  spawnPickupFlagged(25*8, 6*8,  'heart', 'heartOW');
-};
-SCENE_DATA.cave.onEnter = function() {
-  spawnPickupFlagged(10*8, 6*8,  'key',   'keyCave');
-  spawnPickupFlagged(13*8, 8*8,  'coin',  'crystalCave');
-  spawnPickupFlagged(8*8,  14*8, 'heart', 'heartCave');
-
-  if (!getFlag('enteredCave')) {
-    const sageId = world.query('npcData').find(
-      id => world.get(id,'npcData').name === 'CAVE SAGE'
-    );
-    if (sageId !== undefined) {
-      setTimeout(() => cutscene.run(buildCaveEntryCutscene(sageId)), 80);
-    }
-  }
-};
 
 function loop(ts) {
   const delta = Math.min((ts - lastTime) / 1000, 0.05);
@@ -748,6 +847,7 @@ function loop(ts) {
   sysDialog(elapsed);
   sysPickups();
   sysPickupFlags();
+  sysChestLoot(delta);     // animate loot pop-up entities from opened chests
   sysFootsteps(delta);
   sysPortalSparkles(delta);
 
@@ -756,14 +856,21 @@ function loop(ts) {
   drawTilemap(worldState.layerBG,      elapsed);
   drawTilemap(worldState.layerObjects, elapsed);
   sysRender();
-  renderParticles();  // after entities, before HUD
-  renderHUD();        // overlays top strip
+  renderParticles();
+  renderHUD();             // always-on status bar; world is offset below it
+  if (minimapVisible) {
+    renderMinimap({
+      corner:      'bottomRight',
+      tilePixels:  2,
+      showCamera:  true,
+    });
+  }
   renderDialog(elapsed);
   renderSaveNote();
   flushBuffer();
   renderTransitionOverlay();
 
-  // Debug HUD
+  // Debug overlay
   const ptf = world.get(playerId, 'transform');
   document.getElementById('debug').textContent =
     `FPS: ${fps}  SCENE: ${worldState.currentScene}\n` +
@@ -772,7 +879,8 @@ function loop(ts) {
     `FLAGS: met=${+getFlag('metVillager')} cave=${+getFlag('enteredCave')} ` +
     `key=${+getFlag('hasKey')} crystal=${+getFlag('foundCrystal')} rew=${+getFlag('rewarded')}\n` +
     `HP: ${hud.hp}/${hud.maxHp}  COINS: ${hud.coins}  ` +
-    `SCRIPT: ${cutscene.isRunning()?'running':'idle'}`;
+    `SLOT: ${hud.selectedSlot ?? 'none'}  ITEMS: [${hud.items.map(i=>i?i.replace('_item',''):'-').join('|')}]\n` +
+    `SCRIPT: ${cutscene.isRunning()?'running':'idle'}  MINIMAP: ${minimapVisible?'on':'off'}`;
 
   requestAnimationFrame(loop);
 }

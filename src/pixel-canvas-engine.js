@@ -1,30 +1,26 @@
 'use strict';
 // ================================================================
-// PIXEL CANVAS ENGINE v5 — pixel-canvas-engine.js
+// PIXEL CANVAS ENGINE v5.1 — pixel-canvas-engine.js
 //
 // Self-contained vanilla JS engine for 8×8 tile-based games.
-// Zero dependencies. Load before any game script.
+// Zero dependencies. Single putImageData call per frame.
 //
-// NEW IN v5:
-//   Section 20 — HUD: hearts, coins, item slots (framebuffer-rendered)
-//   Section 21 — Particles: pooled, world-space, alpha-blended fadeout
-//   Section 22 — Flags: named booleans, watchers, conditional NPC dialog
-//   Section 23 — Cutscene: sequenced commands (dialog/move/sfx/flag/wait)
+// NEW IN v5.1:
+//   World Y offset — game world is clamped below the HUD strip;
+//     tiles/sprites no longer bleed under the status bar.
+//   Section 20 — HUD: hearts, coins, item slots, item selection,
+//     item use handlers.
+//   Section 21 — Particles: pooled, world-space, alpha-blended fadeout.
+//   Section 22 — Flags: named booleans, watchers, conditional NPC dialog.
+//   Section 23 — Cutscene: sequenced commands.
+//   Section 24 — Chest: interactable entity with open animation + loot.
+//   Section 25 — Minimap: downsampled collision layer, configurable corner.
 //
-// Game script responsibilities:
-//   1. buildSpriteCache(SPRITES)       — after defining your sprites
-//   2. registerScenes(SCENES)          — before loadScene()
-//   3. sound.registerTracks / SFX      — audio data
-//   4. registerTileAnims(obj)          — optional animated tiles
-//   5. setNpcClipFactory(fn)           — optional custom NPC clips
-//   6. setSaveKey(k)                   — optional localStorage namespace
-//   7. set playerId, call loadScene()
-//   8. Main loop: input.update() → systems → render → engineTick(delta)
-//
-// Render order convention (call in this order each frame):
-//   clearBuffer → drawTilemap(BG) → drawTilemap(Objects) → sysRender
-//   → renderParticles → renderHUD → renderDialog → renderSaveNote
-//   → flushBuffer → renderTransitionOverlay
+// WORLD OFFSET CHANGE (v5.1):
+//   WORLD_OFFSET_Y = HUD_H (10px). camera.toScreen() adds this offset
+//   automatically. All world-space rendering (tiles, sprites, particles)
+//   is pushed down. The camera follow uses WORLD_H = LOGICAL_H - HUD_H
+//   for viewport height. Games do not need to change anything.
 // ================================================================
 
 // ================================================================
@@ -36,6 +32,10 @@ const ROWS      = 18;
 const LOGICAL_W = COLS * TILE_SIZE;  // 160
 const LOGICAL_H = ROWS * TILE_SIZE;  // 144
 const HUD_H     = 10;                // px reserved at top for status bar
+
+// World rendering begins below the HUD strip.
+const WORLD_OFFSET_Y = HUD_H;
+const WORLD_H        = LOGICAL_H - WORLD_OFFSET_Y;  // 134
 
 // ================================================================
 // SECTION 2: PALETTE
@@ -129,9 +129,6 @@ const CHAR_H = 8;
 
 // ================================================================
 // SECTION 4: SPRITE CACHE
-// buildSpriteCache(obj): rasterize palette-index arrays → RGBA bufs.
-// buildPaletteSwap(data, indexMap): create a recolored buffer copy.
-// Internal engine sprites (_hud_*) are built at module init time.
 // ================================================================
 const spriteCache = {};
 
@@ -200,10 +197,13 @@ function clearBuffer(palIdx = 0) {
 }
 
 // Blit an 8×8 RGBA buffer. Alpha=0 pixels are skipped (transparent).
-function blitBuffer(buf, sx, sy, flipX = false, flipY = false) {
+// Clips to [0, LOGICAL_W) x [WORLD_OFFSET_Y, LOGICAL_H) so world sprites
+// never paint into the HUD strip.
+function blitBuffer(buf, sx, sy, flipX = false, flipY = false, clipToWorld = false) {
+  const yMin = clipToWorld ? WORLD_OFFSET_Y : 0;
   for (let row = 0; row < TILE_SIZE; row++) {
     const dstY = sy + row;
-    if (dstY < 0 || dstY >= LOGICAL_H) continue;
+    if (dstY < yMin || dstY >= LOGICAL_H) continue;
     const srcRow = flipY ? TILE_SIZE - 1 - row : row;
     for (let col = 0; col < TILE_SIZE; col++) {
       const dstX = sx + col;
@@ -220,6 +220,11 @@ function blitBuffer(buf, sx, sy, flipX = false, flipY = false) {
   }
 }
 
+// World-space blit: always clips to world region (below HUD).
+function blitWorld(buf, sx, sy, flipX = false, flipY = false) {
+  blitBuffer(buf, sx, sy, flipX, flipY, true);
+}
+
 function fillRectPx(px, py, w, h, palIdx) {
   const [r, g, b] = paletteRGBA[palIdx];
   const x0 = Math.max(0, px), x1 = Math.min(LOGICAL_W, px + w);
@@ -231,6 +236,12 @@ function fillRectPx(px, py, w, h, palIdx) {
       frameBuffer[base+2] = b; frameBuffer[base+3] = 255;
     }
   }
+}
+
+// fillRectPx variant that clips to world region (y >= WORLD_OFFSET_Y).
+function fillRectWorld(px, py, w, h, palIdx) {
+  fillRectPx(px, Math.max(py, WORLD_OFFSET_Y), w,
+    Math.max(0, h - Math.max(0, WORLD_OFFSET_Y - py)), palIdx);
 }
 
 // Alpha-blended single pixel write. alpha ∈ [0,1].
@@ -291,20 +302,31 @@ function flushBuffer() { ctx.putImageData(frameImageData, 0, 0); }
 
 // ================================================================
 // SECTION 7: CAMERA
+//
+// v5.1: camera.toScreen() adds WORLD_OFFSET_Y so all world-space
+// rendering is automatically pushed below the HUD strip.
+// camera.follow() uses WORLD_H for the viewport height.
 // ================================================================
 const camera = {
   x: 0, y: 0,
 
+  // Follow wx/wy (world-space center), bounded by world dimensions.
+  // Uses WORLD_H so the visible world viewport does not include HUD.
   follow(wx, wy, worldW, worldH) {
-    this.x = Math.round(Math.max(0, Math.min(worldW - LOGICAL_W, wx - LOGICAL_W / 2)));
-    this.y = Math.round(Math.max(0, Math.min(worldH - LOGICAL_H, wy - LOGICAL_H / 2)));
+    this.x = Math.round(Math.max(0, Math.min(worldW - LOGICAL_W,    wx - LOGICAL_W / 2)));
+    this.y = Math.round(Math.max(0, Math.min(worldH - WORLD_H, wy - WORLD_H / 2)));
   },
 
-  toScreen(wx, wy) { return [wx - this.x, wy - this.y]; },
+  // Convert world-space → screen-space. Y includes the HUD offset.
+  toScreen(wx, wy) {
+    return [wx - this.x, wy - this.y + WORLD_OFFSET_Y];
+  },
 
+  // Visibility test in screen-space (accounts for HUD strip).
   isVisible(wx, wy, w = TILE_SIZE, h = TILE_SIZE) {
-    return wx + w > this.x && wx < this.x + LOGICAL_W &&
-           wy + h > this.y && wy < this.y + LOGICAL_H;
+    const [sx, sy] = this.toScreen(wx, wy);
+    return sx + w > 0 && sx < LOGICAL_W &&
+           sy + h > WORLD_OFFSET_Y && sy < LOGICAL_H;
   },
 };
 
@@ -365,12 +387,13 @@ function resolveSprite(name, elapsed) {
   return anim.frames[Math.floor(elapsed * anim.fps) % anim.frames.length];
 }
 
+// Renders a tilemap layer. World-space blit (clips below HUD automatically).
 function drawTilemap(layer, elapsed = 0) {
   const { cols, rows } = worldState;
   const cStart = Math.max(0, Math.floor(camera.x / TILE_SIZE));
   const cEnd   = Math.min(cols, Math.ceil((camera.x + LOGICAL_W) / TILE_SIZE));
   const rStart = Math.max(0, Math.floor(camera.y / TILE_SIZE));
-  const rEnd   = Math.min(rows, Math.ceil((camera.y + LOGICAL_H) / TILE_SIZE));
+  const rEnd   = Math.min(rows, Math.ceil((camera.y + WORLD_H) / TILE_SIZE));
 
   for (let row = rStart; row < rEnd; row++) {
     for (let col = cStart; col < cEnd; col++) {
@@ -379,15 +402,13 @@ function drawTilemap(layer, elapsed = 0) {
       const buf = spriteCache[resolveSprite(cell, elapsed)];
       if (!buf) continue;
       const [sx, sy] = camera.toScreen(col * TILE_SIZE, row * TILE_SIZE);
-      blitBuffer(buf, sx, sy);
+      blitWorld(buf, sx, sy);
     }
   }
 }
 
 // ================================================================
 // SECTION 11: COLLISION (AABB, axis-separated)
-// setHitbox(x,y,w,h): configure foot-area hitbox offset from sprite.
-// isGrounded(wx,wy): true when solid tile is immediately below hitbox.
 // ================================================================
 let HBX = 1, HBY = 4, HBW = 6, HBH = 4;
 function setHitbox(x, y, w, h) { HBX = x; HBY = y; HBW = w; HBH = h; }
@@ -447,7 +468,6 @@ function animatorSprite(anim) {
 
 // ================================================================
 // SECTION 13: ECS
-// Entity = integer ID. 'persistent' component survives clearSceneEntities().
 // ================================================================
 const world = (() => {
   let nextId = 0;
@@ -479,14 +499,18 @@ const world = (() => {
 // ================================================================
 // SECTION 14: INPUT
 // Abstract action map: keyboard + gamepad unified.
+// v5.1: itemNext / itemPrev cycle inventory selection.
 // ================================================================
 const ACTION_MAP = {
-  up:     { keys: ['ArrowUp',   'KeyW'],   gpButtons: [12] },
-  down:   { keys: ['ArrowDown', 'KeyS'],   gpButtons: [13] },
-  left:   { keys: ['ArrowLeft', 'KeyA'],   gpButtons: [14] },
-  right:  { keys: ['ArrowRight','KeyD'],   gpButtons: [15] },
-  action: { keys: ['KeyZ','Space'],         gpButtons: [0]  },
-  cancel: { keys: ['KeyX','Escape'],        gpButtons: [1]  },
+  up:       { keys: ['ArrowUp',   'KeyW'],   gpButtons: [12] },
+  down:     { keys: ['ArrowDown', 'KeyS'],   gpButtons: [13] },
+  left:     { keys: ['ArrowLeft', 'KeyA'],   gpButtons: [14] },
+  right:    { keys: ['ArrowRight','KeyD'],   gpButtons: [15] },
+  action:   { keys: ['KeyZ','Space'],         gpButtons: [0]  },
+  cancel:   { keys: ['KeyX','Escape'],        gpButtons: [1]  },
+  // Cycle item selection in the HUD inventory slots.
+  itemNext: { keys: ['KeyE','Tab'],           gpButtons: [5]  },  // R-bumper / E / Tab
+  itemPrev: { keys: ['KeyQ'],                 gpButtons: [4]  },  // L-bumper / Q
 };
 
 const input = (() => {
@@ -496,7 +520,7 @@ const input = (() => {
   window.addEventListener('keydown', e => {
     if (!down.has(e.code)) pressed.add(e.code);
     down.add(e.code);
-    if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code))
+    if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space','Tab'].includes(e.code))
       e.preventDefault();
   });
   window.addEventListener('keyup', e => { down.delete(e.code); released.add(e.code); });
@@ -524,9 +548,6 @@ const input = (() => {
 
 // ================================================================
 // SECTION 15: SOUND ENGINE
-// Notation: "C5:0.5 E5:1 R:0.25" — note+octave:beats or rest.
-// Instruments: 'square' | 'triangle' | 'sine' | 'sawtooth'
-// sound.registerTracks(obj) / registerSFX(obj) — called by game.
 // ================================================================
 const NOTE_FREQ_BASE = {
   'C':261.63,'C#':277.18,'D':293.66,'D#':311.13,'E':329.63,
@@ -634,8 +655,6 @@ document.addEventListener('pointerdown', () => sound.init(), { once: true });
 
 // ================================================================
 // SECTION 16: SCENE MANAGER
-// registerScenes(obj): register scene map before loadScene().
-// setNpcClipFactory(fn): fn(spriteName) → animator clips object.
 // ================================================================
 let playerId = -1;
 
@@ -683,6 +702,16 @@ function spawnSceneNpcs(scene) {
   }
 }
 
+// Spawn chests defined in scene config.
+// def: { tileX, tileY, loot: [{ type, sprite }], flagName }
+function spawnSceneChests(scene) {
+  for (const def of (scene.chests || [])) {
+    if (def.flagName && getFlag(def.flagName)) continue; // already opened
+    _spawnChestEntity(def.tileX * TILE_SIZE, def.tileY * TILE_SIZE,
+      def.loot ?? [], def.flagName ?? null);
+  }
+}
+
 function loadScene(name, px = null, py = null) {
   const scene = _scenes[name];
   if (!scene) { console.warn('Unknown scene:', name); return; }
@@ -699,9 +728,9 @@ function loadScene(name, px = null, py = null) {
     ptf.y = py ?? scene.playerStart.tileY * TILE_SIZE;
   }
   spawnSceneNpcs(scene);
+  spawnSceneChests(scene);
   camera.x = 0; camera.y = 0;
   sound.playBGM(scene.music);
-  // Fire any onEnter hook defined in scene
   scene.onEnter?.();
 }
 
@@ -737,18 +766,14 @@ function renderTransitionOverlay() {
 
 // ================================================================
 // SECTION 17: DIALOG
-// dialog._onClose: optional callback invoked when dialog closes.
-//   Set by cutscene.run for script-driven dialog.
-// dialog._branch:  resolved NPC branch, applied on close via flags.
-// renderDialog(elapsed): pass current elapsed for blink animation.
 // ================================================================
 const dialog = {
   active:   false,
   lines:    [],
   page:     0,
   name:     '',
-  _onClose: null,   // fn() | null — invoked once on final page close
-  _branch:  null,   // NPC branch object | null — side-effects on close
+  _onClose: null,
+  _branch:  null,
 };
 
 function renderDialog(elapsed) {
@@ -769,8 +794,6 @@ function renderDialog(elapsed) {
 
 // ================================================================
 // SECTION 18: SAVE / LOAD
-// v2 payload includes flags + HUD state for full quest persistence.
-// setSaveKey(k): namespace localStorage key per game.
 // ================================================================
 let _saveKey = 'pixelCanvas_v5';
 function setSaveKey(k) { _saveKey = k; }
@@ -806,7 +829,6 @@ const saveLoad = {
       if (!raw) return false;
       const data = JSON.parse(raw);
       if (data.version !== 2 || !_scenes[data.scene]) return false;
-      // Restore flags before loadScene (scene.onEnter may read them)
       if (data.flags) Object.assign(flags, data.flags);
       if (data.hud) {
         hud.hp     = data.hud.hp    ?? hud.hp;
@@ -839,14 +861,17 @@ window.addEventListener('keydown', e => {
 // SECTION 19: BUILT-IN SYSTEMS
 // ================================================================
 
-// Standard 4-direction player input → velocity + animator.
-// Blocked by: dialog active, scene transitioning, cutscene input lock.
 function sysInput() {
   if (dialog.active || sceneTransition.state !== 'none' || cutscene.isInputLocked()) {
     const vel = world.get(playerId, 'velocity');
     if (vel) { vel.dx = 0; vel.dy = 0; }
     return;
   }
+
+  // Item slot cycling (processed before movement).
+  if (input.pressed('itemNext')) hud.cycleSlot(1);
+  if (input.pressed('itemPrev')) hud.cycleSlot(-1);
+
   const vel  = world.get(playerId, 'velocity');
   const anim = world.get(playerId, 'animator');
   if (!vel || !anim) return;
@@ -871,10 +896,8 @@ function sysInput() {
   }
 }
 
-// Waypoint patrol AI.
 function sysAI(delta) {
   for (const id of world.query('transform', 'velocity', 'patrol', 'animator')) {
-    // Skip if this entity is being driven by a cutscene move command
     if (world.has(id, '_scriptMove')) continue;
     const tf     = world.get(id, 'transform');
     const vel    = world.get(id, 'velocity');
@@ -900,7 +923,6 @@ function sysAI(delta) {
   }
 }
 
-// AABB movement with collision resolution.
 function sysMovement(delta) {
   for (const id of world.query('transform', 'velocity')) {
     const tf  = world.get(id, 'transform');
@@ -944,7 +966,6 @@ function sysSceneTransition() {
   const portals = _scenes[worldState.currentScene]?.portals ?? [];
   for (const p of portals) {
     if (tx === p.tileX && ty === p.tileY) {
-      // Run portal script if defined, otherwise transition directly
       if (p.script) { cutscene.run(p.script); return; }
       startTransition(p.targetScene, p.targetTileX * TILE_SIZE, p.targetTileY * TILE_SIZE);
       return;
@@ -952,9 +973,6 @@ function sysSceneTransition() {
   }
 }
 
-// NPC proximity dialog. Supports flag-gated dialog branches.
-// dialog._onClose fires on last page close (used by cutscene dialog).
-// dialog._branch  fires _applyDialogBranch (NPC branch side-effects).
 function sysDialog(elapsed) {
   if (dialog.active) {
     if (input.pressed('action') || input.pressed('cancel')) {
@@ -974,19 +992,29 @@ function sysDialog(elapsed) {
     }
     return;
   }
-
-  // Cutscene manages its own dialog via _onClose — don't intercept
   if (cutscene.isRunning()) return;
+
+  // Use action key: first check chests, then NPCs, then selected item use.
   if (!input.pressed('action')) return;
   const ptf = world.get(playerId, 'transform');
   if (!ptf) return;
 
+  // Chest interaction (higher priority than NPC).
   const nearby = spatialHash.queryRect(ptf.x - 12, ptf.y - 12, TILE_SIZE + 24, TILE_SIZE + 24);
+  for (const id of nearby) {
+    if (id === playerId) continue;
+    const chest = world.get(id, 'chest');
+    if (chest && !chest.opened) {
+      _openChest(id);
+      return;
+    }
+  }
+
+  // NPC interaction.
   for (const id of nearby) {
     if (id === playerId) continue;
     const npc = world.get(id, 'npcData');
     if (!npc) continue;
-
     const { lines, branch } = _resolveNpcDialog(npc);
     dialog.active  = true;
     dialog.lines   = lines;
@@ -998,9 +1026,12 @@ function sysDialog(elapsed) {
     sound.playSFX('dialog');
     return;
   }
+
+  // Selected item use.
+  hud.useSelectedItem();
 }
 
-// Entity render pass: animator or sprite component.
+// Entity render pass: world-space (clips below HUD).
 function sysRender() {
   for (const id of world.query('transform')) {
     const tf = world.get(id, 'transform');
@@ -1017,29 +1048,24 @@ function sysRender() {
     }
     if (!buf) continue;
     const [sx, sy] = camera.toScreen(tf.x, tf.y);
-    blitBuffer(buf, sx | 0, sy | 0, flipX, flipY);
+    blitWorld(buf, sx | 0, sy | 0, flipX, flipY);
   }
 }
 
 // ================================================================
 // SECTION 20: HUD SYSTEM
 //
-// Renders a 10px status bar at the top of the framebuffer.
-// Hearts represent HP in half-heart units (maxHp=6 → 3 hearts).
-// Coin icon + counter. Four item slots (show sprite by name).
+// v5.1 additions:
+//   selectedSlot  — integer 0-3 or null (no selection)
+//   cycleSlot(n)  — advance selection by ±1, wrapping through null
+//   registerItemUse(spriteName, fn) — register callback for item use
+//   useSelectedItem() — fire handler for currently selected slot's item
+//   renderHUD() — draws selection highlight on active slot
 //
-// Internal sprites (_hud_*) are rasterized at module init time
-// and stored in spriteCache, so games can blitBuffer them directly.
-//
-// API:
-//   hud.setHp(n), hud.addHp(±n)
-//   hud.setCoins(n), hud.addCoins(n)
-//   hud.setItem(slot 0-3, spriteName | null)
-//   hud.setMaxHp(n)   — expand hearts, does not change current hp
-//   hud.visible       — toggle entire bar
+// Item use handler signature: fn(slotIndex) → void
+// Returning false from the handler suppresses the default SFX.
 // ================================================================
 
-// Internal HUD sprite definitions (palette-indexed, 8×8).
 const _HUD_DEFS = {
   _hud_heart_full: [
     null,27,27,null,null,27,27,null,
@@ -1072,38 +1098,60 @@ const _HUD_DEFS = {
     null,null,null,null,null,null,null,null,
   ],
   _hud_coin: [
-    null,null,7,7,7,7,null,null,
-    null,7,20,7,7,7,7,null,
-    7,20,7,7,7,7,7,7,
-    7,7,7,7,7,7,7,7,
-    7,7,7,7,7,7,7,7,
-    7,7,7,7,7,7,7,7,
-    null,7,7,7,7,7,7,null,
-    null,null,7,7,7,7,null,null,
+    null,null, 7, 7, 7, 7,null,null,
+    null, 7,  20, 7, 7, 7, 7,null,
+     7,  20,  7, 7, 7, 7, 7, 7,
+     7,   7,  7, 7, 7, 7, 7, 7,
+     7,   7,  7, 7, 7, 7, 7, 7,
+    null, 7,  7, 7, 7, 7, 7,null,
+    null,null, 7, 7, 7, 7,null,null,
+    null,null,null,null,null,null,null,null,
   ],
   _hud_slot_empty: [
     14,14,14,14,14,14,14,14,
-    14,0,0,0,0,0,0,14,
-    14,0,0,0,0,0,0,14,
-    14,0,0,0,0,0,0,14,
-    14,0,0,0,0,0,0,14,
-    14,0,0,0,0,0,0,14,
-    14,0,0,0,0,0,0,14,
+    14, 0, 0, 0, 0, 0, 0,14,
+    14, 0, 0, 0, 0, 0, 0,14,
+    14, 0, 0, 0, 0, 0, 0,14,
+    14, 0, 0, 0, 0, 0, 0,14,
+    14, 0, 0, 0, 0, 0, 0,14,
+    14, 0, 0, 0, 0, 0, 0,14,
     14,14,14,14,14,14,14,14,
+  ],
+  // Chest sprites (palette-indexed 8×8).
+  _chest_closed: [
+    null, 3, 3, 3, 3, 3, 3,null,
+       3, 5, 5, 5, 5, 5, 5, 3,
+       3, 5, 7, 7, 7, 7, 5, 3,
+       3, 3, 3, 3, 3, 3, 3, 3,
+       3, 5, 5, 5, 5, 5, 5, 3,
+       3, 5, 5, 5, 5, 5, 5, 3,
+       3, 5, 5, 5, 5, 5, 5, 3,
+    null, 3, 3, 3, 3, 3, 3,null,
+  ],
+  _chest_open: [
+       3, 5, 7, 7, 7, 7, 5, 3,
+       3, 3, 3, 3, 3, 3, 3, 3,
+    null, 3, 3, 3, 3, 3, 3,null,
+    null, 3, 0, 0, 0, 0, 3,null,
+    null, 3, 0, 0, 0, 0, 3,null,
+    null, 3, 0, 0, 0, 0, 3,null,
+    null, 3, 0, 0, 0, 0, 3,null,
+    null, 3, 3, 3, 3, 3, 3,null,
   ],
 };
 
-// Build HUD sprites into cache immediately (before game calls buildSpriteCache).
 for (const [name, data] of Object.entries(_HUD_DEFS)) {
   spriteCache[name] = _rasterizeSprite(data);
 }
 
 const hud = {
-  hp:      6,
-  maxHp:   6,
-  coins:   0,
-  items:   [null, null, null, null],
-  visible: true,
+  hp:           6,
+  maxHp:        6,
+  coins:        0,
+  items:        [null, null, null, null],  // sprite names
+  selectedSlot: null,                      // null = nothing selected, 0-3 = slot index
+  visible:      true,
+  _itemHandlers: new Map(),  // spriteName → fn(slotIndex)
 
   setHp(v)           { this.hp     = Math.max(0, Math.min(this.maxHp, v)); },
   addHp(n)           { this.setHp(this.hp + n); },
@@ -1112,16 +1160,53 @@ const hud = {
   addCoins(n)        { this.coins += n; },
   setItem(s, name)   { if (s >= 0 && s < 4) this.items[s] = name ?? null; },
   clearItem(s)       { this.setItem(s, null); },
+
+  // Cycle through slots. direction = +1 or -1.
+  // Cycling past end → null (no selection). Null cycles back to first populated slot.
+  cycleSlot(direction) {
+    const populated = this.items.reduce((a, v, i) => v ? [...a, i] : a, []);
+    if (!populated.length) { this.selectedSlot = null; return; }
+    if (this.selectedSlot === null) {
+      this.selectedSlot = direction > 0 ? populated[0] : populated[populated.length - 1];
+    } else {
+      const cur = populated.indexOf(this.selectedSlot);
+      const next = cur + direction;
+      if (next < 0 || next >= populated.length) {
+        this.selectedSlot = null;  // deselect
+      } else {
+        this.selectedSlot = populated[next];
+      }
+    }
+    sound.playSFX('dialog');
+  },
+
+  // Register a use handler for an item sprite name.
+  // fn(slotIndex) is called when the player presses the action key
+  // while that item is selected. Return false to suppress SFX.
+  registerItemUse(spriteName, fn) {
+    this._itemHandlers.set(spriteName, fn);
+  },
+
+  // Called by sysDialog when action is pressed and no NPC/chest is nearby.
+  useSelectedItem() {
+    if (this.selectedSlot === null) return;
+    const spriteName = this.items[this.selectedSlot];
+    if (!spriteName) return;
+    const fn = this._itemHandlers.get(spriteName);
+    if (fn) {
+      const suppress = fn(this.selectedSlot) === false;
+      if (!suppress) sound.playSFX('confirm');
+    }
+  },
 };
 
 function renderHUD() {
   if (!hud.visible) return;
 
-  // Background strip + bottom separator
   fillRectPx(0, 0, LOGICAL_W, HUD_H, 0);
   fillRectPx(0, HUD_H - 1, LOGICAL_W, 1, 13);
 
-  // ---- Hearts (left side) ----
+  // Hearts.
   const heartCount = Math.ceil(hud.maxHp / 2);
   for (let i = 0; i < heartCount; i++) {
     const filled = hud.hp - i * 2;
@@ -1131,14 +1216,24 @@ function renderHUD() {
     blitBuffer(spriteCache[key], 2 + i * 9, 1);
   }
 
-  // ---- Coin icon + count ----
+  // Coin icon + count.
   const coinX = 2 + heartCount * 9 + 4;
   blitBuffer(spriteCache['_hud_coin'], coinX, 1);
   drawText(`x${hud.coins}`, coinX + 9, 2, 7);
 
-  // ---- Item slots (right side, 4 × 10px wide) ----
+  // Item slots (right side). Selected slot gets a highlight border.
   for (let s = 0; s < 4; s++) {
     const sx = LOGICAL_W - 4 - (3 - s) * 10 - 8;
+    const isSelected = hud.selectedSlot === s;
+
+    // Selection highlight: draw bright border 1px outside slot.
+    if (isSelected) {
+      fillRectPx(sx - 1, 0,       10, 1, 7);   // top
+      fillRectPx(sx - 1, HUD_H-1, 10, 1, 7);   // bottom (on separator line)
+      fillRectPx(sx - 1, 0,        1, HUD_H, 7);// left
+      fillRectPx(sx + 8, 0,        1, HUD_H, 7);// right
+    }
+
     blitBuffer(spriteCache['_hud_slot_empty'], sx, 1);
     if (hud.items[s]) {
       const buf = spriteCache[hud.items[s]];
@@ -1149,18 +1244,6 @@ function renderHUD() {
 
 // ================================================================
 // SECTION 21: PARTICLE SYSTEM
-//
-// Fixed pool of MAX_PARTICLES (no GC churn). Particles are world-space;
-// camera.toScreen() applied at render time. Alpha-blended fadeout via
-// blendPixel() — break from pure palette rendering for smooth decay.
-//
-// API:
-//   emitParticle(x, y, vx, vy, life, colorIdx, gravity, size)
-//   emitBurst(x, y, preset)   — named presets below
-//   updateParticles(delta)    — call from engineTick or game loop
-//   renderParticles()         — call after sysRender, before renderHUD
-//
-// Presets: 'footstep' | 'portal' | 'hit' | 'coin' | 'sparkle' | 'smoke'
 // ================================================================
 const MAX_PARTICLES = 256;
 const _particles = Array.from({ length: MAX_PARTICLES }, () => ({
@@ -1178,7 +1261,6 @@ function emitParticle(x, y, vx, vy, life, colorIdx, gravity = 0, size = 1) {
     p.color = colorIdx; p.gravity = gravity; p.size = size;
     return;
   }
-  // Pool full — overwrite the oldest (first active found with least life)
   let oldest = null, minLife = Infinity;
   for (const p of _particles) {
     if (p.active && p.life < minLife) { minLife = p.life; oldest = p; }
@@ -1190,7 +1272,6 @@ function emitParticle(x, y, vx, vy, life, colorIdx, gravity = 0, size = 1) {
   }
 }
 
-// Named burst presets. All values: vxR/vyR = random half-range, vyBase = base upward vel.
 const _BURST_PRESETS = {
   footstep: { n:3,  cols:[11,12,23],     vxR:18, vyR:8,  vyBase:-18, life:0.22, g:80,   sz:1 },
   portal:   { n:10, cols:[25,19,18,16],  vxR:38, vyR:38, vyBase:-28, life:0.75, g:0,    sz:1 },
@@ -1199,6 +1280,7 @@ const _BURST_PRESETS = {
   sparkle:  { n:5,  cols:[19,20,17,25],  vxR:14, vyR:14, vyBase:-10, life:0.55, g:0,    sz:1 },
   smoke:    { n:4,  cols:[22,23,24,13],  vxR:10, vyR:6,  vyBase:-22, life:0.90, g:-12,  sz:2 },
   levelup:  { n:16, cols:[7,20,25,17,27],vxR:60, vyR:60, vyBase:-60, life:1.0,  g:30,   sz:1 },
+  chest:    { n:12, cols:[7,5,4,20,3],   vxR:40, vyR:40, vyBase:-50, life:0.70, g:120,  sz:1 },
 };
 
 function emitBurst(x, y, preset) {
@@ -1224,6 +1306,7 @@ function updateParticles(delta) {
   }
 }
 
+// Particles are world-space; clip to world region.
 function renderParticles() {
   for (const p of _particles) {
     if (!p.active) continue;
@@ -1232,9 +1315,8 @@ function renderParticles() {
     const [sx, sy] = camera.toScreen(p.x | 0, p.y | 0);
     const c = paletteRGBA[p.color];
     const s = p.size | 0;
-    // Clip to viewport, skip HUD strip
-    const x0 = Math.max(0, sx), x1 = Math.min(LOGICAL_W, sx + s);
-    const y0 = Math.max(HUD_H, sy), y1 = Math.min(LOGICAL_H, sy + s);
+    const x0 = Math.max(0, sx),           x1 = Math.min(LOGICAL_W, sx + s);
+    const y0 = Math.max(WORLD_OFFSET_Y, sy), y1 = Math.min(LOGICAL_H, sy + s);
     for (let py = y0; py < y1; py++)
       for (let px = x0; px < x1; px++)
         blendPixel(px, py, c[0], c[1], c[2], alpha);
@@ -1243,28 +1325,6 @@ function renderParticles() {
 
 // ================================================================
 // SECTION 22: QUEST / FLAG SYSTEM
-//
-// flags = { [name]: boolean } — global, serialized with save data.
-// Watchers fire once when ALL listed flags become true (won't re-fire
-// unless manually reset with resetWatcher()).
-//
-// Conditional NPC dialog branches:
-//   npcDef.dialogBranches = [
-//     {
-//       requires:   ['flag1', 'flag2'],  // all must be true
-//       excludes:   ['flag3'],           // none may be true
-//       lines:      ['PAGE 1', 'PAGE 2'],
-//       setFlags:   ['questDone'],       // set these on close
-//       clearFlags: ['inProgress'],      // clear these on close
-//       addCoins:   5,                   // give coins on close
-//       addHp:      2,                   // heal on close
-//       runScript:  [ ...commands ],     // run cutscene on close
-//     },
-//   ]
-// First matching branch wins. Falls back to npcData.dialogLines.
-//
-// Portal entries can also gate on flags:
-//   portals: [{ ..., requires: ['keyFound'] }]
 // ================================================================
 const flags = {};
 const _watchers = [];
@@ -1276,15 +1336,12 @@ function setFlag(name, val = true) {
 }
 
 function clearFlag(name) { flags[name] = false; }
-
-function getFlag(name) { return !!flags[name]; }
-
+function getFlag(name)   { return !!flags[name]; }
 function hasFlags(...names) { return names.every(n => !!flags[n]); }
 
 function onFlags(flagNames, fn, { once = true } = {}) {
   const w = { flagNames, fn, once, fired: false };
   _watchers.push(w);
-  // Fire immediately if already satisfied
   if (flagNames.every(n => flags[n])) { w.fired = true; fn(); }
   return w;
 }
@@ -1299,8 +1356,6 @@ function _fireWatchers() {
   }
 }
 
-// Resolve the best dialog branch for an NPC given current flags.
-// Returns { lines, branch } where branch may be null (default dialog).
 function _resolveNpcDialog(npc) {
   for (const b of (npc.dialogBranches ?? [])) {
     const reqOk = !b.requires || b.requires.every(f => flags[f]);
@@ -1310,8 +1365,6 @@ function _resolveNpcDialog(npc) {
   return { lines: npc.dialogLines, branch: null };
 }
 
-// Apply a dialog branch's side-effects when dialog closes on last page.
-// Called by sysDialog after the player dismisses final page.
 function _applyDialogBranch(branch) {
   if (!branch) return;
   if (branch.setFlags)   branch.setFlags.forEach(f => setFlag(f));
@@ -1324,29 +1377,6 @@ function _applyDialogBranch(branch) {
 
 // ================================================================
 // SECTION 23: CUTSCENE / SCRIPT SYSTEM
-//
-// A script is an ordered array of command objects executed in sequence.
-// Time-consuming commands (wait, dialog, move) pause the runner until
-// complete. Only one script runs at a time; run() replaces any active.
-//
-// Command reference:
-//   { cmd:'wait',       seconds:1.5 }
-//   { cmd:'dialog',     name:'SAGE', lines:['HELLO', 'WORLD'] }
-//   { cmd:'sfx',        name:'portal' }
-//   { cmd:'bgm',        name:'cave' }
-//   { cmd:'stopBgm' }
-//   { cmd:'flag',       name:'metSage', value:true }
-//   { cmd:'move',       id:entityId, tx:5, ty:10, speed:40 }
-//   { cmd:'transition', scene:'cave', tx:3, ty:8 }
-//   { cmd:'lockInput',  value:true }
-//   { cmd:'hud',        show:false }
-//   { cmd:'emit',       x:80, y:80, preset:'portal' }
-//   { cmd:'call',       fn:() => { /* sync */ } }
-//
-// cutscene.run(commands)   — start a script, cancels any running one
-// cutscene.stop()          — abort
-// cutscene.isRunning()     — true while active
-// cutscene.isInputLocked() — true while lockInput is active
 // ================================================================
 const cutscene = (() => {
   let _queue    = [];
@@ -1354,7 +1384,7 @@ const cutscene = (() => {
   let _current  = null;
   let _waitT    = 0;
   let _locked   = false;
-  let _moveData = null;  // { id, targetX, targetY, speed }
+  let _moveData = null;
 
   function run(commands) {
     _queue = [...commands]; _running = true; _current = null;
@@ -1378,20 +1408,16 @@ const cutscene = (() => {
 
   function _exec(cmd) {
     switch (cmd.cmd) {
-      case 'wait':
-        _waitT = cmd.seconds;
-        break;  // update() advances on timer expiry
-
+      case 'wait':       _waitT = cmd.seconds; break;
       case 'dialog':
         dialog.active   = true;
         dialog.name     = (cmd.name ?? '').toUpperCase();
         dialog.lines    = cmd.lines.map(l => l.toUpperCase());
         dialog.page     = 0;
         dialog._branch  = null;
-        dialog._onClose = _advance;  // resume script on close
+        dialog._onClose = _advance;
         sound.playSFX('dialog');
-        break;  // update() does nothing — sysDialog handles advance
-
+        break;
       case 'sfx':      sound.playSFX(cmd.name);      _advance(); break;
       case 'bgm':      sound.playBGM(cmd.name);      _advance(); break;
       case 'stopBgm':  sound.stopBGM();               _advance(); break;
@@ -1399,12 +1425,7 @@ const cutscene = (() => {
       case 'hud':      hud.visible = cmd.show !== false; _advance(); break;
       case 'emit':     emitBurst(cmd.x, cmd.y, cmd.preset); _advance(); break;
       case 'call':     cmd.fn();                      _advance(); break;
-
-      case 'flag':
-        setFlag(cmd.name, cmd.value ?? true);
-        _advance();
-        break;
-
+      case 'flag':     setFlag(cmd.name, cmd.value ?? true); _advance(); break;
       case 'move': {
         const tf = world.get(cmd.id, 'transform');
         if (!tf) { _advance(); return; }
@@ -1415,16 +1436,12 @@ const cutscene = (() => {
           speed:   cmd.speed ?? 45,
         };
         world.set(cmd.id, '_scriptMove', true);
-        // update() advances when entity reaches target
         break;
       }
-
       case 'transition':
-        // Advance script first, then kick off transition
         _advance();
         startTransition(cmd.scene, cmd.tx * TILE_SIZE, cmd.ty * TILE_SIZE);
         break;
-
       default:
         console.warn('[cutscene] unknown cmd:', cmd.cmd);
         _advance();
@@ -1433,26 +1450,18 @@ const cutscene = (() => {
 
   function update(delta) {
     if (!_running || !_current) return;
-
     if (_current.cmd === 'wait') {
       _waitT -= delta;
       if (_waitT <= 0) _advance();
       return;
     }
-
-    if (_current.cmd === 'dialog') {
-      // sysDialog handles advance via dialog._onClose
-      return;
-    }
-
+    if (_current.cmd === 'dialog') return;
     if (_current.cmd === 'move' && _moveData) {
       const md = _moveData;
       const tf = world.get(md.id, 'transform');
       if (!tf) { _moveData = null; world.set(md.id, '_scriptMove', false); _advance(); return; }
-
       const dx = md.targetX - tf.x, dy = md.targetY - tf.y;
       const dist = Math.sqrt(dx*dx + dy*dy);
-
       if (dist < 2) {
         tf.x = md.targetX; tf.y = md.targetY;
         const vel  = world.get(md.id, 'velocity');
@@ -1482,7 +1491,229 @@ const cutscene = (() => {
 })();
 
 // ================================================================
-// SECTION 24: ENGINE TICK
+// SECTION 24: CHEST SYSTEM
+//
+// Chest entities are ECS objects with a 'chest' component:
+//   { opened: bool, loot: [{ sprite, type, onPickup }], flagName }
+//
+// _spawnChestEntity(wx, wy, loot, flagName)
+//   Spawns a chest at world coords. loot is an array of loot defs.
+//   flagName (optional): set when opened, gates re-spawn on reload.
+//
+// Loot def: { sprite: 'key_item', type: 'key', onPickup: fn }
+//   onPickup(lootDef, chestId) is called when the loot is spawned.
+//   Use it to apply effects (hud.addCoins, setFlag, etc.).
+//   If omitted, loot is silently spawned as a pickup entity only.
+//
+// Scene config: add a 'chests' array to any scene definition:
+//   chests: [
+//     { tileX:5, tileY:8, flagName:'chest_5_8',
+//       loot: [{ sprite:'coin_item', type:'coin', onPickup: ()=>hud.addCoins(3) }] }
+//   ]
+//
+// Chest open sequence:
+//   1. Sprite swaps to _chest_open
+//   2. Loot entities spawn above the chest with upward velocity
+//   3. 'chest' preset particle burst fires
+//   4. SFX 'chest_open' plays (if registered) else falls back to 'confirm'
+//   5. flagName is set if provided
+// ================================================================
+
+function _spawnChestEntity(wx, wy, loot, flagName) {
+  return world.createEntity({
+    transform: { x: wx, y: wy },
+    sprite:    { name: '_chest_closed', flipX: false },
+    chest:     { opened: false, loot: loot ?? [], flagName: flagName ?? null },
+    collider:  true,  // blocks movement
+  });
+}
+
+// Internal: open a chest by entity id.
+function _openChest(id) {
+  const chest = world.get(id, 'chest');
+  const tf    = world.get(id, 'transform');
+  if (!chest || !tf || chest.opened) return;
+
+  chest.opened = true;
+
+  // Swap to open sprite.
+  world.set(id, 'sprite', { name: '_chest_open', flipX: false });
+
+  // Remove collider so player can walk over it.
+  const comps = world._store?.get?.(id);  // internal access — safe to omit
+  if (world.has(id, 'collider')) world.set(id, 'collider', false);
+
+  // Particle burst.
+  emitBurst(tf.x + 4, tf.y + 4, 'chest');
+
+  // SFX.
+  sound.playSFX('chest_open');  // falls back silently if not registered
+
+  // Set flag.
+  if (chest.flagName) setFlag(chest.flagName);
+
+  // Spawn loot entities above the chest, drifting upward briefly.
+  let lootOffset = 0;
+  for (const def of (chest.loot ?? [])) {
+    const lootId = world.createEntity({
+      transform: { x: tf.x, y: tf.y - 2 - lootOffset },
+      sprite:    { name: def.sprite, flipX: false },
+      chestLoot: { vy: -(30 + lootOffset * 10), def },
+    });
+    lootOffset += 2;
+    // Fire onPickup immediately (e.g. add coins, set flags).
+    if (def.onPickup) def.onPickup(def, id);
+  }
+
+  // Show loot note if any loot has a label.
+  const label = chest.loot.find(d => d.label)?.label;
+  if (label) showNote(label);
+}
+
+// Animates the loot pop-up entities spawned by _openChest.
+// Call this from the game loop. Loot entities fade out after ~0.6s.
+function sysChestLoot(delta) {
+  for (const id of world.query('chestLoot', 'transform')) {
+    const cl = world.get(id, 'chestLoot');
+    const tf = world.get(id, 'transform');
+    cl.vy += 180 * delta;     // gravity pulls back down
+    tf.y  += cl.vy * delta;
+    cl.timer = (cl.timer ?? 0) + delta;
+    if (cl.timer > 0.7) world.destroyEntity(id);
+  }
+}
+
+// ================================================================
+// SECTION 25: MINIMAP
+//
+// renderMinimap(config?) renders a downsampled top-down map of the
+// current scene's collision layer, with a player position dot,
+// directly into the framebuffer.
+//
+// config fields (all optional):
+//   corner:     'bottomRight' | 'bottomLeft' | 'topRight' | 'topLeft'
+//               Default: 'bottomRight'
+//   tilePixels: pixels per world tile on the minimap. Default: 2
+//   borderPal:  palette index for border. Default: 21
+//   bgPal:      palette index for empty space. Default: 0
+//   wallPal:    palette index for solid tiles. Default: 22
+//   playerPal:  palette index for player dot. Default: 7
+//   cameraPal:  palette index for camera viewport rect. Default: 14
+//   margin:     px gap from screen edge. Default: 3
+//   showCamera: draw a rect showing the current camera viewport. Default: true
+//
+// The map is padded with a 1px border. Total size is:
+//   width  = worldCols * tilePixels + 2
+//   height = worldRows * tilePixels + 2
+// ================================================================
+function renderMinimap(config = {}) {
+  const {
+    corner      = 'bottomRight',
+    tilePixels  = 2,
+    borderPal   = 21,
+    bgPal       = 13,
+    wallPal     = 22,
+    playerPal   = 7,
+    cameraPal   = 14,
+    margin      = 3,
+    showCamera  = true,
+  } = config;
+
+  const col = worldState.layerCollision;
+  if (!col) return;
+  const wCols = worldState.cols;
+  const wRows = worldState.rows;
+  const mapW  = wCols * tilePixels + 2;  // +2 for 1px border each side
+  const mapH  = wRows * tilePixels + 2;
+
+  // Determine top-left corner of the minimap on screen.
+  let mx, my;
+  switch (corner) {
+    case 'bottomLeft':  mx = margin;              my = LOGICAL_H - mapH - margin; break;
+    case 'topRight':    mx = LOGICAL_W - mapW - margin; my = WORLD_OFFSET_Y + margin; break;
+    case 'topLeft':     mx = margin;              my = WORLD_OFFSET_Y + margin;   break;
+    case 'bottomRight':
+    default:            mx = LOGICAL_W - mapW - margin; my = LOGICAL_H - mapH - margin; break;
+  }
+
+  // Border fill.
+  fillRectPx(mx, my, mapW, mapH, borderPal);
+  // Background.
+  fillRectPx(mx + 1, my + 1, mapW - 2, mapH - 2, bgPal);
+
+  // Draw tiles.
+  const [br, bg, bb] = paletteRGBA[bgPal];
+  const [wr, wg, wb] = paletteRGBA[wallPal];
+  for (let row = 0; row < wRows; row++) {
+    for (let c = 0; c < wCols; c++) {
+      const solid = col[row]?.[c];
+      if (!solid) continue;
+      const px = mx + 1 + c * tilePixels;
+      const py = my + 1 + row * tilePixels;
+      for (let dy = 0; dy < tilePixels; dy++) {
+        for (let dx = 0; dx < tilePixels; dx++) {
+          const bx = px + dx, by = py + dy;
+          if (bx < 0 || bx >= LOGICAL_W || by < 0 || by >= LOGICAL_H) continue;
+          const base = (by * LOGICAL_W + bx) * 4;
+          frameBuffer[base]   = wr;
+          frameBuffer[base+1] = wg;
+          frameBuffer[base+2] = wb;
+          frameBuffer[base+3] = 255;
+        }
+      }
+    }
+  }
+
+  // Camera viewport rect (shows visible world area).
+  if (showCamera) {
+    const [cr, cg, cb] = paletteRGBA[cameraPal];
+    const vx0 = mx + 1 + Math.round(camera.x / TILE_SIZE * tilePixels);
+    const vy0 = my + 1 + Math.round(camera.y / TILE_SIZE * tilePixels);
+    const vx1 = vx0 + Math.round(LOGICAL_W / TILE_SIZE * tilePixels);
+    const vy1 = vy0 + Math.round(WORLD_H   / TILE_SIZE * tilePixels);
+    // Top and bottom edges.
+    for (let x = vx0; x <= vx1; x++) {
+      [[x, vy0], [x, vy1]].forEach(([bx, by]) => {
+        if (bx < mx+1 || bx >= mx+mapW-1 || by < my+1 || by >= my+mapH-1) return;
+        const base = (by * LOGICAL_W + bx) * 4;
+        frameBuffer[base] = cr; frameBuffer[base+1] = cg;
+        frameBuffer[base+2] = cb; frameBuffer[base+3] = 255;
+      });
+    }
+    // Left and right edges.
+    for (let y = vy0; y <= vy1; y++) {
+      [[vx0, y], [vx1, y]].forEach(([bx, by]) => {
+        if (bx < mx+1 || bx >= mx+mapW-1 || by < my+1 || by >= my+mapH-1) return;
+        const base = (by * LOGICAL_W + bx) * 4;
+        frameBuffer[base] = cr; frameBuffer[base+1] = cg;
+        frameBuffer[base+2] = cb; frameBuffer[base+3] = 255;
+      });
+    }
+  }
+
+  // Player dot.
+  const ptf = world.get(playerId, 'transform');
+  if (ptf) {
+    const [pr, pg, pb] = paletteRGBA[playerPal];
+    const dotX = mx + 1 + Math.round(ptf.x / TILE_SIZE * tilePixels);
+    const dotY = my + 1 + Math.round(ptf.y / TILE_SIZE * tilePixels);
+    const dotS = Math.max(1, tilePixels);
+    for (let dy = 0; dy < dotS; dy++) {
+      for (let dx = 0; dx < dotS; dx++) {
+        const bx = dotX + dx, by = dotY + dy;
+        if (bx < mx+1 || bx >= mx+mapW-1 || by < my+1 || by >= my+mapH-1) continue;
+        const base = (by * LOGICAL_W + bx) * 4;
+        frameBuffer[base]   = pr;
+        frameBuffer[base+1] = pg;
+        frameBuffer[base+2] = pb;
+        frameBuffer[base+3] = 255;
+      }
+    }
+  }
+}
+
+// ================================================================
+// SECTION 26: ENGINE TICK
 // Call once per frame with delta. Advances all internal subsystems.
 // ================================================================
 function engineTick(delta) {
