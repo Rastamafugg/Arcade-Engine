@@ -1593,28 +1593,41 @@ function sysChestLoot(delta) {
 // config fields (all optional):
 //   corner:     'bottomRight' | 'bottomLeft' | 'topRight' | 'topLeft'
 //               Default: 'bottomRight'
-//   tilePixels: pixels per world tile on the minimap. Default: 2
+//   fixedMapW:  fixed pixel width of the map area (border included).
+//   fixedMapH:  fixed pixel height of the map area (border included).
+//               When both are set, tilePixels is computed as the largest
+//               integer that fits worldCols × worldRows inside the budget.
+//               This keeps the minimap the same screen size across scenes
+//               of different dimensions. tilePixels is ignored when set.
+//               Recommended: set to the smallest scene's natural size.
+//               Example (cave = 20×18 @ tilePixels 2):
+//                 fixedMapW: 42  (20*2+2)
+//                 fixedMapH: 38  (18*2+2)
+//   tilePixels: pixels per world tile. Used when fixedMapW/H are absent.
+//               Default: 2
 //   borderPal:  palette index for border. Default: 21
-//   bgPal:      palette index for empty space. Default: 0
+//   bgPal:      palette index for empty space. Default: 13
 //   wallPal:    palette index for solid tiles. Default: 22
 //   playerPal:  palette index for player dot. Default: 7
 //   cameraPal:  palette index for camera viewport rect. Default: 14
 //   margin:     px gap from screen edge. Default: 3
 //   showCamera: draw a rect showing the current camera viewport. Default: true
 //
-// The map is padded with a 1px border. Total size is:
+// Without fixedMapW/H the total rendered size is:
 //   width  = worldCols * tilePixels + 2
 //   height = worldRows * tilePixels + 2
 // ================================================================
 function renderMinimap(config = {}) {
   const {
     corner      = 'bottomRight',
-    tilePixels  = 2,
+    fixedMapW   = null,
+    fixedMapH   = null,
     borderPal   = 21,
     bgPal       = 13,
     wallPal     = 22,
     playerPal   = 7,
     cameraPal   = 14,
+    tilePixels  = 2,
     margin      = 3,
     showCamera  = true,
   } = config;
@@ -1623,8 +1636,23 @@ function renderMinimap(config = {}) {
   if (!col) return;
   const wCols = worldState.cols;
   const wRows = worldState.rows;
-  const mapW  = wCols * tilePixels + 2;  // +2 for 1px border each side
-  const mapH  = wRows * tilePixels + 2;
+
+  // When fixedMapW/H are both provided, derive tilePixels so the world fits
+  // inside the budget. mapW/mapH are locked to the fixed dimensions, keeping
+  // the minimap the same screen size across scenes of different tile counts.
+  let tp, mapW, mapH;
+  if (fixedMapW !== null && fixedMapH !== null) {
+    tp   = Math.max(1, Math.min(
+             Math.floor((fixedMapW - 2) / wCols),
+             Math.floor((fixedMapH - 2) / wRows)
+           ));
+    mapW = fixedMapW;
+    mapH = fixedMapH;
+  } else {
+    tp   = tilePixels;
+    mapW = wCols * tp + 2;
+    mapH = wRows * tp + 2;
+  }
 
   // Determine top-left corner of the minimap on screen.
   let mx, my;
@@ -1648,10 +1676,10 @@ function renderMinimap(config = {}) {
     for (let c = 0; c < wCols; c++) {
       const solid = col[row]?.[c];
       if (!solid) continue;
-      const px = mx + 1 + c * tilePixels;
-      const py = my + 1 + row * tilePixels;
-      for (let dy = 0; dy < tilePixels; dy++) {
-        for (let dx = 0; dx < tilePixels; dx++) {
+      const px = mx + 1 + c * tp;
+      const py = my + 1 + row * tp;
+      for (let dy = 0; dy < tp; dy++) {
+        for (let dx = 0; dx < tp; dx++) {
           const bx = px + dx, by = py + dy;
           if (bx < 0 || bx >= LOGICAL_W || by < 0 || by >= LOGICAL_H) continue;
           const base = (by * LOGICAL_W + bx) * 4;
@@ -1667,10 +1695,10 @@ function renderMinimap(config = {}) {
   // Camera viewport rect (shows visible world area).
   if (showCamera) {
     const [cr, cg, cb] = paletteRGBA[cameraPal];
-    const vx0 = mx + 1 + Math.round(camera.x / TILE_SIZE * tilePixels);
-    const vy0 = my + 1 + Math.round(camera.y / TILE_SIZE * tilePixels);
-    const vx1 = vx0 + Math.round(LOGICAL_W / TILE_SIZE * tilePixels);
-    const vy1 = vy0 + Math.round(WORLD_H   / TILE_SIZE * tilePixels);
+    const vx0 = mx + 1 + Math.round(camera.x / TILE_SIZE * tp);
+    const vy0 = my + 1 + Math.round(camera.y / TILE_SIZE * tp);
+    const vx1 = vx0 + Math.round(LOGICAL_W / TILE_SIZE * tp);
+    const vy1 = vy0 + Math.round(WORLD_H   / TILE_SIZE * tp);
     // Top and bottom edges.
     for (let x = vx0; x <= vx1; x++) {
       [[x, vy0], [x, vy1]].forEach(([bx, by]) => {
@@ -1695,9 +1723,9 @@ function renderMinimap(config = {}) {
   const ptf = world.get(playerId, 'transform');
   if (ptf) {
     const [pr, pg, pb] = paletteRGBA[playerPal];
-    const dotX = mx + 1 + Math.round(ptf.x / TILE_SIZE * tilePixels);
-    const dotY = my + 1 + Math.round(ptf.y / TILE_SIZE * tilePixels);
-    const dotS = Math.max(1, tilePixels);
+    const dotX = mx + 1 + Math.round(ptf.x / TILE_SIZE * tp);
+    const dotY = my + 1 + Math.round(ptf.y / TILE_SIZE * tp);
+    const dotS = Math.max(1, tp);
     for (let dy = 0; dy < dotS; dy++) {
       for (let dx = 0; dx < dotS; dx++) {
         const bx = dotX + dx, by = dotY + dy;

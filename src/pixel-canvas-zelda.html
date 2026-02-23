@@ -860,9 +860,10 @@ function loop(ts) {
   renderHUD();             // always-on status bar; world is offset below it
   if (minimapVisible) {
     renderMinimap({
-      corner:      'bottomRight',
-      tilePixels:  2,
-      showCamera:  true,
+      corner:     'bottomRight',
+      fixedMapW:  42,   // cave natural size: 20 tiles × 2px + 2px border
+      fixedMapH:  38,   // cave natural size: 18 tiles × 2px + 2px border
+      showCamera: true,
     });
   }
   renderDialog(elapsed);
