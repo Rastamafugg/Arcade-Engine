@@ -1,14 +1,14 @@
-# PIXEL CANVAS ENGINE
+# PIXEL CANVAS ENGINE v5.1
 
 A self-contained vanilla JavaScript pixel-art game engine for 8×8 tile-based games. Zero dependencies. Single `putImageData` call per frame.
 
 ## Repository Structure
 
 ```
-pixel-canvas-engine.js       Core engine library
+pixel-canvas-engine.js           Core engine library (v5.1)
 templates/
-  top-down-adventure.html    Zelda-style overworld + cave demo
-  platformer.html            Side-scrolling platformer demo
+  top-down-adventure.html        Zelda-style overworld demo with combat, items, and cutscenes
+  platformer.html                Side-scrolling platformer demo
 ```
 
 ---
@@ -30,15 +30,46 @@ Both HTML templates in `templates/` demonstrate full integration patterns. Use t
 
 ---
 
+## What's New in v5.1
+
+- **World Y offset** — Game world is clamped below the HUD strip. `WORLD_OFFSET_Y = HUD_H` (10px). `camera.toScreen()` applies the offset automatically; no changes required in game code.
+- **HUD system** — Hearts, coins, 4 item slots with selection highlighting and use-handler registration.
+- **Particles** — Pooled world-space particles with alpha-blended fadeout. Preset bursts: `chest`, `levelup`, `hit`.
+- **Flags** — Named boolean game state. Watchers fire callbacks when conditions are met. NPC dialog branches can `require` or `exclude` flags.
+- **Cutscene system** — Sequenced command runner: `wait`, `dialog`, `sfx`, `bgm`, `lockInput`, `move`, `setFlag`, and more.
+- **Chest system** — ECS chest entities with open animation, loot spawn, particle burst, and optional flag gating.
+- **Minimap** — Downsampled collision layer rendered to a configurable corner of the screen.
+
+---
+
 ## Templates
 
 ### `top-down-adventure.html`
-Zelda-style top-down game with two scenes (overworld and cave), connected by portal tiles. Demonstrates:
-- Multi-scene configuration with NPC dialog and patrol AI
-- Animated water tiles
-- Walled enclosures and collision maps
+Extended Zelda-style top-down game. Demonstrates:
+
+- Multi-scene configuration (overworld + cave) connected by portal tiles
+- **Combat system**: melee swing hitboxes, ranged projectile spawning, knockback, damageable components, iframe flicker
+- **4 weapon types** acquired from chests — Iron Sword, Bow, War Axe, Shield (passive damage reduction)
+- **Item pickups** — coin, heart, key, bomb, potion; each with `onPickup` callbacks
+- **Enemy AI** with health, damageable component, and death handling
+- **Flag-conditional NPC dialog branches** (`requires`, `excludes`, `setFlags`, `addCoins`)
+- **Cutscene sequences** triggered by flags or NPC dialog close
+- **Minimap** (toggle with M key)
+- Animated water tiles, patrol AI, walled enclosures
 - Scene-scoped music (overworld / cave BGM)
-- Save/load via F5/F9
+- Save/load via F5/F9 (saves flags, HUD state, scene, and position)
+
+#### Controls (top-down-adventure)
+| Input | Action |
+|---|---|
+| Arrow keys / WASD | Move |
+| Z / Space | Interact (NPC, chest), confirm dialog |
+| X | Attack with active weapon |
+| E / Tab | Cycle item slot forward |
+| Q | Cycle item slot backward |
+| M | Toggle minimap |
+| F5 | Save |
+| F9 | Load |
 
 ### `platformer.html`
 Side-scrolling platformer. Demonstrates:
@@ -47,6 +78,7 @@ Side-scrolling platformer. Demonstrates:
 - One-way platform collision (top-surface only)
 - Horizontal scroll camera following
 - Sprite flip on direction change
+- Multiple selectable player characters
 
 ---
 
@@ -76,73 +108,105 @@ PixelCanvas.init(config)
 - Sprite cache: palette indices rasterized to RGBA buffers once at startup
 - Palette swap: per-sprite index remapping without mutating source data
 - Bitmap font: 5×7 pixel glyphs defined as 5-bit binary row masks; renders directly into framebuffer
+- **HUD strip**: top 10px (`HUD_H`) reserved; world rendering begins at `WORLD_OFFSET_Y`
 
 ---
 
 ## Tilemaps
 
 - Three-layer system: `BG` (terrain), `Objects` (decor/walls), `Collision` (boolean solid map)
-- Named tile animations with configurable FPS (e.g. water ripple: 2 FPS alternating frames)
-- Camera-bounded tile culling: loop range derived from camera position — O(viewport tiles), not O(world tiles)
+- Named tile animations with configurable FPS
 
 ---
 
-## Camera
+## HUD System
 
-- World-space viewport with pixel-accurate follow and world-boundary clamping
-- `camera.toScreen(wx, wy)` and `camera.isVisible(wx, wy, w, h)` used by all render and cull paths
-- Platformer mode: horizontal-only follow with vertical deadzone support
-
----
-
-## Collision
-
-- AABB hitbox offset from sprite origin (configurable per entity; default: foot area)
-- Axis-separated resolution: X and Y tested independently — prevents diagonal wall sticking
-- Platformer extension: one-way platform tiles (solid on top surface only), grounded state flag
+```js
+hud.setItem(slot, spriteName)         // assign item to slot 0–3
+hud.cycleSlot(±1)                     // advance/retreat selection (wraps through null)
+hud.registerItemUse(spriteName, fn)   // register use-handler; fn(slotIndex) → void
+hud.useSelectedItem()                 // fire handler for selected slot
+hud.addCoins(n)
+hud.addHp(n)
+```
 
 ---
 
-## Entity / Component System
+## Flags
 
-- Entities are integer IDs; components are plain objects in a `Map`
-- `world.query(...componentNames)` returns all matching entity IDs
-- `persistent` component flag: entity survives scene transitions
-- System functions called in explicit, user-defined order each frame
+```js
+setFlag(name)               // set boolean true, fires watchers
+clearFlag(name)
+getFlag(name) → bool
+hasFlags(...names) → bool
 
----
+onFlags(['flagA','flagB'], fn, { once: true })  // callback when all named flags are set
+```
 
-## Spatial Hash
-
-- 32px cell grid; entities inserted by AABB overlap
-- `spatialHash.queryRect(x, y, w, h)` used for NPC proximity and collision broadphase
-- Rebuilt each frame after `MovementSystem`
+NPC dialog branches use `requires: [...]` and `excludes: [...]` arrays to resolve which lines to show. Branches may include `setFlags`, `clearFlags`, `addCoins`, `addHp`, `emit`, and `runScript`.
 
 ---
 
-## Animation
+## Cutscene System
 
-- Named clips: `{ frames: [spriteName, ...], durations: number | number[] }`
-- `animatorPlay(anim, clip)` safe to call every frame — resets only on clip change
-- Per-instance flip X/Y flags
+```js
+cutscene.run(commands)   // execute a command array
+cutscene.stop()
+cutscene.isRunning() → bool
+cutscene.isInputLocked() → bool
+```
 
----
-
-## Scene System
-
-- Named scenes defined as config objects; map arrays built by scene builder functions
-- Portal tiles trigger transitions by tile-coordinate match
-- Fade-to-black transition: alpha state machine drawn via `ctx` after framebuffer flush
-- Scene NPCs/entities defined in scene config; spawned and destroyed on load/unload
-- `persistent` entities (e.g. player) survive transitions
+Supported commands: `wait`, `dialog`, `sfx`, `bgm`, `stopBgm`, `lockInput`, `move`, `setFlag`, `clearFlag`, `emit`, `note`.
 
 ---
 
-## Dialog System
+## Chest System
 
-- Multi-page NPC dialog triggered by proximity check via spatial hash + action input
-- Rendered into framebuffer: bordered box, name badge, blink indicator
-- Driven by `npcData` component — no hardcoded per-NPC render logic
+Add a `chests` array to any scene definition:
+
+```js
+chests: [
+  {
+    tileX: 5, tileY: 8, flagName: 'chest_5_8',
+    loot: [{ sprite: 'coin_item', type: 'coin', onPickup: () => hud.addCoins(3) }]
+  }
+]
+```
+
+`flagName` gates re-spawn on scene reload. The open sequence: sprite swap → loot spawn → particle burst (`chest` preset) → SFX `chest_open`.
+
+---
+
+## Particles
+
+```js
+emitBurst(worldX, worldY, preset)   // presets: 'chest', 'levelup', 'hit'
+```
+
+Particles are world-space, pooled, and alpha-fade to zero.
+
+---
+
+## Minimap
+
+Rendered as a downsampled collision layer. Configurable corner position. Shows a camera viewport rect and a player dot. Toggle or render manually via `renderMinimap()`.
+
+---
+
+## Input
+
+Abstract action map: keyboard + gamepad unified under named actions.
+
+| Action | Keys | Gamepad |
+|---|---|---|
+| `up/down/left/right` | Arrow keys, WASD | D-pad |
+| `action` | Z, Space | A |
+| `cancel` | X, Escape | B |
+| `attack` | X | X button |
+| `itemNext` | E, Tab | R-bumper |
+| `itemPrev` | Q | L-bumper |
+
+Per-frame edge detection: `held`, `pressed` (single frame), `released`. Gamepad polled via `navigator.getGamepads()`.
 
 ---
 
@@ -158,25 +222,14 @@ PixelCanvas.init(config)
 
 ## Save / Load
 
-- Payload: `{ version, scene, x, y }` — scene state rebuilt from definitions on load
+- Payload (version 2): `{ version, scene, x, y, flags, hud }` — scene state rebuilt from definitions on load; flags and HUD (HP, coins) restored
 - `localStorage` with try/catch (graceful failure in sandboxed/private contexts)
 - Default bindings: F5 save, F9 load
 - Framebuffer notification banner with configurable timeout
 
 ---
 
-## Input
-
-- Abstract action map: keyboard + gamepad unified under named actions (`up`, `down`, `left`, `right`, `action`, `cancel`, `jump`)
-- Per-frame edge detection: `held`, `pressed` (single frame), `released`
-- Gamepad polled via `navigator.getGamepads()`
-- Platformer template binds `jump` to Space/ArrowUp/gamepad A
-
----
-
 ## System Execution Order
-
-Logic and render passes are explicit and user-controlled. Default order used in both templates:
 
 ```
 input.update → sysInput → sysAI → sysPhysics/sysMovement
@@ -189,4 +242,4 @@ clearBuffer → drawTilemap(BG) → drawTilemap(Objects)
 → flushBuffer → renderTransitionOverlay (ctx)
 ```
 
-Platformer inserts `sysGravity` before `sysMovement` and `sysGrounded` after.
+Platformer inserts `sysGravity` before `sysMovement` and `sysGrounded` after. Top-down adventure inserts `sysPlayerAttack` and `sysProjectiles` after `sysAI`.
