@@ -511,6 +511,8 @@ const ACTION_MAP = {
   // Cycle item selection in the HUD inventory slots.
   itemNext: { keys: ['KeyE','Tab'],           gpButtons: [5]  },  // R-bumper / E / Tab
   itemPrev: { keys: ['KeyQ'],                 gpButtons: [4]  },  // L-bumper / Q
+  // Attack: fires active weapon (melee swing or projectile).
+  attack:   { keys: ['KeyX'],                 gpButtons: [2]  },  // X key / gamepad X
 };
 
 const input = (() => {
@@ -1797,7 +1799,9 @@ function sysDamage(delta) {
 
   for (const aid of damagerIds) {
     const dmgr = world.get(aid, 'damager');
+    if (!dmgr) continue;            // may have been destroyed mid-loop
     const atf  = world.get(aid, 'transform');
+    if (!atf) continue;
     const ax0  = atf.x + 1, ay0 = atf.y + 1;
     const ax1  = atf.x + 7, ay1 = atf.y + 7;
 
@@ -1813,6 +1817,7 @@ function sysDamage(delta) {
       if (dmgable.iframes > 0) continue;
 
       const vtf = world.get(vid, 'transform');
+      if (!vtf) continue;           // may have been destroyed mid-loop
       const bx0 = vtf.x + HBX, by0 = vtf.y + HBY;
       const bx1 = bx0 + HBW,   by1 = by0 + HBH;
 
@@ -1829,6 +1834,10 @@ function sysDamage(delta) {
 
       if (dmgable.onHit)            dmgable.onHit(vid, aid, dmgr.damage);
       if (dmgable.hp <= 0 && dmgable.onDeath) dmgable.onDeath(vid, aid);
+
+      // Non-piercing projectiles are destroyed on first hit.
+      const _proj = world.get(aid, 'projectile');
+      if (_proj && !_proj.piercing) { world.destroyEntity(aid); break; }
     }
   }
 
@@ -1836,5 +1845,120 @@ function sysDamage(delta) {
   for (const vid of damageableIds) {
     const d = world.get(vid, 'damageable');
     if (d && d.iframes > 0) d.iframes = Math.max(0, d.iframes - delta);
+  }
+}
+
+// ================================================================
+// SECTION 28: COMBAT SYSTEM
+//
+// Adds melee swings and ranged/spell projectiles as ECS entities.
+// Works on top of Section 27 (sysDamage) — swing/projectile entities
+// carry 'damager' components and are resolved by sysDamage automatically.
+//
+// Weapon def (plain object, defined in game code):
+//   {
+//     type:        'melee' | 'ranged' | 'spell',
+//     name:        string,              -- display name for HUD
+//     damage:      number,
+//     cooldownMax: number,              -- seconds between attacks
+//     team:        string,              -- default 'player'
+//     knockback:   number,
+//     // melee:
+//     swingW:      number,              -- hitbox width  px (default 16)
+//     swingH:      number,              -- hitbox height px (default 12)
+//     swingLife:   number,              -- seconds active  (default 0.12)
+//     swingSprite: string | null,       -- optional visual
+//     // ranged / spell:
+//     projSprite:  string,
+//     projSpeed:   number,              -- px/s
+//     projLife:    number,              -- max flight seconds
+//     piercing:    bool,               -- pass through multiple targets
+//   }
+//
+// spawnAttack(ownerId, weapon, wx, wy, dirX, dirY):
+//   Creates a melee swing entity or a projectile entity.
+//   dirX/dirY: cardinal direction (-1, 0, or 1).
+//
+// sysProjectile(delta):
+//   Moves all 'projectile' entities. Destroys on world edge or
+//   solid-tile collision. (sysDamage handles hits + piercing logic.)
+//
+// sysSwing(delta):
+//   Ticks 'swing' entity lifetime. Destroys on expiry.
+// ================================================================
+
+function spawnAttack(ownerId, weapon, wx, wy, dirX, dirY) {
+  const cx = wx + TILE_SIZE / 2;
+  const cy = wy + TILE_SIZE / 2;
+  const team = weapon.team ?? 'player';
+
+  if (weapon.type === 'melee') {
+    const sw   = weapon.swingW    ?? TILE_SIZE * 2;
+    const sh   = weapon.swingH    ?? TILE_SIZE * 1.5;
+    const life = weapon.swingLife ?? 0.12;
+    // Centre the hitbox in front of the player.
+    const offX = dirX * (TILE_SIZE * 0.75 + sw * 0.25);
+    const offY = dirY * (TILE_SIZE * 0.75 + sh * 0.25);
+    world.createEntity({
+      transform: { x: (cx + offX - sw / 2) | 0, y: (cy + offY - sh / 2) | 0 },
+      swing:     { life },
+      damager:   { damage: weapon.damage, team, knockback: weapon.knockback ?? 50 },
+      ...(weapon.swingSprite ? {
+        sprite: { name: weapon.swingSprite, flipX: dirX < 0, flipY: dirY > 0 },
+      } : {}),
+    });
+  } else {
+    // ranged / spell
+    const speed = weapon.projSpeed ?? 110;
+    world.createEntity({
+      transform:  { x: (cx - TILE_SIZE / 2) | 0, y: (cy - TILE_SIZE / 2) | 0 },
+      projectile: {
+        vx:       dirX * speed,
+        vy:       dirY * speed,
+        life:     weapon.projLife ?? 1.5,
+        owner:    ownerId,
+        piercing: !!weapon.piercing,
+      },
+      sprite:  { name: weapon.projSprite, flipX: dirX < 0, flipY: dirY > 0 },
+      damager: { damage: weapon.damage, team, knockback: weapon.knockback ?? 30 },
+    });
+  }
+}
+
+// Moves projectiles and destroys them on world-edge or solid-tile impact.
+// Damage on entity overlap is handled by sysDamage (which also destroys
+// non-piercing projectiles on first hit).
+function sysProjectile(delta) {
+  for (const id of world.query('projectile', 'transform')) {
+    const proj = world.get(id, 'projectile');
+    const tf   = world.get(id, 'transform');
+    if (!proj || !tf) continue;
+
+    proj.life -= delta;
+    if (proj.life <= 0) { world.destroyEntity(id); continue; }
+
+    tf.x += proj.vx * delta;
+    tf.y += proj.vy * delta;
+
+    // Destroy on world boundary.
+    if (tf.x < 0 || tf.x + TILE_SIZE > worldState.w ||
+        tf.y < 0 || tf.y + TILE_SIZE > worldState.h) {
+      world.destroyEntity(id); continue;
+    }
+
+    // Destroy on solid-tile collision.
+    if (collidesAt(tf.x, tf.y)) {
+      world.destroyEntity(id); continue;
+    }
+  }
+}
+
+// Ticks melee swing lifetime; destroys on expiry.
+function sysSwing(delta) {
+  for (const id of world.query('swing')) {
+    const sw = world.get(id, 'swing');
+    if (!sw) continue;
+    sw.life -= delta;
+    if (sw.life <= 0) world.destroyEntity(id);
   }
 }

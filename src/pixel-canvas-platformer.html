@@ -21,7 +21,7 @@
 </head>
 <body>
 <canvas id="screen"></canvas>
-<div id="hint">WASD/ARROWS: move  |  Z/SPACE: jump  |  UP near ladder: climb</div>
+<div id="hint">WASD/ARROWS: move  |  Z/SPACE: jump  |  UP near ladder: climb  |  X: attack  |  E/Q: cycle weapon</div>
 
 <script src="pixel-canvas-engine.js"></script>
 
@@ -32,89 +32,142 @@
 // SPRITES
 // ================================================================
 const SPRITES = {
-  // ---- Background sky tile (two shades for visual depth) ----
   sky0: [
     30,30,30,30,30,30,30,30, 30,30,30,30,30,30,30,30,
     30,30,30,30,30,30,30,30, 30,30,30,30,30,30,30,30,
     30,30,30,30,30,30,30,30, 30,30,30,30,30,30,30,30,
     30,30,30,30,30,30,30,30, 30,30,30,30,30,30,30,30,
   ],
-  // ---- Solid floor / wall tile ----
   pl_floor: [
     22,22,22,22,22,22,22,22, 20,20,20,20,20,20,20,20,
     21,21,21,21,21,21,21,21, 22,22,22,22,22,22,22,22,
     20,20,20,20,20,20,20,20, 21,21,21,21,21,21,21,21,
     22,22,22,22,22,22,22,22, 23,23,23,23,23,23,23,23,
   ],
-  // ---- One-way platform (girder, top 3px solid, rest transparent) ----
   pl_platform: [
     21,21,21,21,21,21,21,21, 20,20,20,20,20,20,20,20,
     22,22,22,22,22,22,22,22, null,null,null,null,null,null,null,null,
     null,null,null,null,null,null,null,null, null,null,null,null,null,null,null,null,
     null,null,null,null,null,null,null,null, null,null,null,null,null,null,null,null,
   ],
-  // ---- Ladder ----
   pl_ladder: [
     3,null,null,null,null,null,null,3, 3,null,null,null,null,null,null,3,
     3,5,5,5,5,5,5,3, 3,null,null,null,null,null,null,3,
     3,null,null,null,null,null,null,3, 3,null,null,null,null,null,null,3,
     3,5,5,5,5,5,5,3, 3,null,null,null,null,null,null,3,
   ],
-  // ---- Donkey Kong ----
   pl_dk: [
     null,3,3,3,3,3,3,null, 3,5,3,24,24,3,5,3,
     3,3,3,3,3,3,3,3, 3,3,4,3,3,4,3,3,
     null,4,4,4,4,4,4,null, null,4,3,3,3,3,4,null,
     null,3,null,null,null,null,3,null, null,3,null,null,null,null,3,null,
   ],
-  // ---- Princess ----
   pl_princess: [
     null,null,7,7,7,7,null,null, null,7,6,7,7,6,7,null,
     null,7,7,7,7,7,7,null, null,27,27,27,27,27,27,null,
     27,27,27,27,27,27,27,27, null,27,6,6,6,6,27,null,
     null,null,6,null,null,6,null,null, null,null,6,null,null,6,null,null,
   ],
-  // ---- Barrel ----
   pl_barrel: [
     null,26,26,26,26,26,26,null, 26,27,4,5,5,4,27,26,
     26,4,5,20,4,5,4,26, 26,5,20,4,4,20,5,26,
     26,4,5,4,20,4,5,26, 26,4,4,5,5,4,4,26,
     26,27,4,4,4,4,27,26, null,26,26,26,26,26,26,null,
   ],
-  // ---- Player idle ----
   pl_idle: [
     null,null,6,6,6,6,null,null, null,6,24,6,6,24,6,null,
     null,6,6,6,6,6,6,null, null,16,16,16,16,16,16,null,
     16,16,5,16,16,5,16,16, null,16,5,5,5,5,16,null,
     null,5,null,null,null,null,5,null, null,5,null,null,null,null,5,null,
   ],
-  // ---- Player walk frame 0 ----
   pl_walk0: [
     null,null,6,6,6,6,null,null, null,6,24,6,6,24,6,null,
     null,6,6,6,6,6,6,null, null,16,16,16,16,16,16,null,
     16,16,5,16,16,5,16,16, null,16,5,5,5,5,16,null,
     null,5,5,null,null,5,null,null, null,null,5,null,null,null,null,null,
   ],
-  // ---- Player walk frame 1 ----
   pl_walk1: [
     null,null,6,6,6,6,null,null, null,6,24,6,6,24,6,null,
     null,6,6,6,6,6,6,null, null,16,16,16,16,16,16,null,
     16,16,5,16,16,5,16,16, null,16,5,5,5,5,16,null,
     null,null,null,null,5,5,null,null, null,null,null,null,null,5,null,null,
   ],
-  // ---- Player jump ----
   pl_jump: [
     null,null,6,6,6,6,null,null, null,6,24,6,6,24,6,null,
     null,6,6,6,6,6,6,null, 16,null,16,16,16,16,null,16,
     null,16,5,16,16,5,16,null, null,16,5,5,5,5,16,null,
     null,null,5,null,null,5,null,null, null,null,5,null,null,5,null,null,
   ],
-  // ---- Player climb ----
   pl_climb: [
     null,null,6,6,6,6,null,null, null,6,24,6,6,24,6,null,
     null,6,6,6,6,6,6,null, null,16,16,16,16,16,16,null,
     16,null,5,16,16,5,null,16, null,16,5,5,5,5,16,null,
     null,5,null,null,null,null,5,null, null,null,5,null,null,5,null,null,
+  ],
+
+  // ---- Enemy: red goblin, two walk frames ----
+  // Palette: 26=red, 27=pink-red, 24=dark-gray (eyes), 4=orange, 3=brown
+  pl_enemy0: [
+    null,null,26,26,26,26,null,null, null,26,24,26,26,24,26,null,
+    null,26,26,27,27,26,26,null,     null,4,4,4,4,4,4,null,
+       4,4,26,4,4,26,4,4,           null,4,26,26,26,26,4,null,
+    null,3,26,null,null,26,3,null,   null,3,null,null,null,null,3,null,
+  ],
+  pl_enemy1: [
+    null,null,26,26,26,26,null,null, null,26,24,26,26,24,26,null,
+    null,26,26,27,27,26,26,null,     null,4,4,4,4,4,4,null,
+       4,4,26,4,4,26,4,4,           null,4,26,26,26,26,4,null,
+    null,26,3,null,null,3,26,null,   null,null,3,null,null,3,null,null,
+  ],
+
+  // ---- Sword swing: diagonal slash, tip upper-right (facing right) ----
+  // flipX = true  => facing left
+  // flipY = true  => tip lower-right (downward swing, not used here)
+  pl_sword_swing: [
+    null,null,null,null,null,null,7,20,
+    null,null,null,null,null,7,20,null,
+    null,null,null,null,7,20,null,null,
+    null,null,null,7,20,null,null,null,
+    null,null,7,20,null,null,null,null,
+    null,7,20,null,null,null,null,null,
+       7,20,null,null,null,null,null,null,
+    null,null,null,null,null,null,null,null,
+  ],
+
+  // ---- Axe swing: wide circular arc ----
+  pl_axe_swing: [
+    null,null,null,3,3,null,null,null,
+    null,null,3,null,null,3,null,null,
+    null,3,null,4,4,null,3,null,
+       3,null,4,26,26,4,null,3,
+    null,3,null,4,4,null,3,null,
+    null,null,3,null,null,3,null,null,
+    null,null,null,3,null,null,null,null,
+    null,null,null,null,null,null,null,null,
+  ],
+
+  // ---- Arrow: horizontal, tip on right (flipX for leftward flight) ----
+  pl_arrow: [
+    null,null,null,null,null,null,null,null,
+    null,null,null,null,null,null,null,null,
+    null,null,null,null,null,null,null,7,
+    null,5,5,5,5,5,5,5,
+    null,null,null,null,null,null,null,7,
+    null,null,null,null,null,null,null,null,
+    null,null,null,null,null,null,null,null,
+    null,null,null,null,null,null,null,null,
+  ],
+
+  // ---- Magic bolt: symmetric orb (all-direction safe) ----
+  pl_bolt: [
+    null,null,null,null,null,null,null,null,
+    null,null,16,16,16,null,null,null,
+    null,16,18,19,18,16,null,null,
+    null,16,19,20,19,16,null,null,
+    null,16,18,19,18,16,null,null,
+    null,null,16,16,16,null,null,null,
+    null,null,null,null,null,null,null,null,
+    null,null,null,null,null,null,null,null,
   ],
 };
 
@@ -136,27 +189,69 @@ sound.registerTracks({
 });
 
 sound.registerSFX({
-  jump:  { bpm:960, channels:[{ instrument:'square',   notes:'C5:0.05 E5:0.05 G5:0.08' }] },
-  die:   { bpm:480, channels:[{ instrument:'square',   notes:'G4:0.1 F4:0.1 E4:0.1 D4:0.15 C4:0.2' }] },
-  win:   { bpm:240, channels:[{ instrument:'square',   notes:'C5:0.15 E5:0.15 G5:0.15 C6:0.4' }] },
-  score: { bpm:960, channels:[{ instrument:'triangle', notes:'E6:0.05 G6:0.08' }] },
-  hurt:  { bpm:480, channels:[{ instrument:'square',   notes:'A4:0.06 G4:0.1' }] },
+  jump:        { bpm:960, channels:[{ instrument:'square',   notes:'C5:0.05 E5:0.05 G5:0.08' }] },
+  die:         { bpm:480, channels:[{ instrument:'square',   notes:'G4:0.1 F4:0.1 E4:0.1 D4:0.15 C4:0.2' }] },
+  win:         { bpm:240, channels:[{ instrument:'square',   notes:'C5:0.15 E5:0.15 G5:0.15 C6:0.4' }] },
+  score:       { bpm:960, channels:[{ instrument:'triangle', notes:'E6:0.05 G6:0.08' }] },
+  hurt:        { bpm:480, channels:[{ instrument:'square',   notes:'A4:0.06 G4:0.1' }] },
+  sword_swing: { bpm:960, channels:[{ instrument:'square',   notes:'G5:0.03 C5:0.05' }] },
+  axe_swing:   { bpm:480, channels:[{ instrument:'square',   notes:'D4:0.06 A3:0.09' }] },
+  bow_fire:    { bpm:960, channels:[{ instrument:'triangle', notes:'A5:0.04 E5:0.07' }] },
+  wand_fire:   { bpm:480, channels:[{ instrument:'sine',     notes:'E6:0.04 G6:0.04 C7:0.08' }] },
+  enemy_die:   { bpm:480, channels:[{ instrument:'square',   notes:'A4:0.05 F4:0.05 C4:0.1' }] },
+  weapon_swap: { bpm:960, channels:[{ instrument:'triangle', notes:'C6:0.04' }] },
 });
 
 // ================================================================
 // PHYSICS CONSTANTS
 // ================================================================
-const GRAVITY    = 300;   // px/s²
-const JUMP_VY    = -140;  // px/s (upward)
-const WALK_SPEED = 55;    // px/s
-const BARREL_VX  = 32;    // px/s horizontal
-const BARREL_SPAWN_RATE = 4.0; // seconds between spawns
+const GRAVITY          = 300;
+const JUMP_VY          = -140;
+const WALK_SPEED       = 55;
+const BARREL_VX        = 32;
+const BARREL_SPAWN_RATE = 4.0;
 
-// Hitbox for platformer (wider, full-height for barrel hit detection)
 setHitbox(1, 1, 6, 7);
 
-// Platform rows (tile row index in the world grid)
 const PLAT_ROWS = [1, 4, 7, 10, 13];
+
+// ================================================================
+// WEAPON DEFINITIONS
+// ================================================================
+const WEAPONS = {
+  sword: {
+    name: 'SWORD', type: 'melee',
+    damage: 1, cooldownMax: 0.30,
+    swingW: 14, swingH: 10, swingLife: 0.13,
+    swingSprite: 'pl_sword_swing', knockback: 65,
+    sfx: 'sword_swing', team: 'player',
+  },
+  axe: {
+    name: 'AXE', type: 'melee',
+    damage: 2, cooldownMax: 0.70,
+    swingW: 14, swingH: 14, swingLife: 0.20,
+    swingSprite: 'pl_axe_swing', knockback: 110,
+    sfx: 'axe_swing', team: 'player',
+  },
+  bow: {
+    name: 'BOW', type: 'ranged',
+    damage: 1, cooldownMax: 0.50,
+    projSprite: 'pl_arrow', projSpeed: 145, projLife: 1.2,
+    piercing: false, knockback: 20,
+    sfx: 'bow_fire', team: 'player',
+  },
+  wand: {
+    name: 'WAND', type: 'spell',
+    damage: 2, cooldownMax: 0.55,
+    projSprite: 'pl_bolt', projSpeed: 105, projLife: 1.6,
+    piercing: true, knockback: 35,   // bolt passes through multiple enemies
+    sfx: 'wand_fire', team: 'player',
+  },
+};
+
+const WEAPON_ORDER = ['sword', 'axe', 'bow', 'wand'];
+let weaponIdx      = 0;
+let weaponCooldown = 0;
 
 // ================================================================
 // SCENE BUILDER
@@ -166,37 +261,21 @@ function buildPlatformerScene(cols, rows) {
   const obj = Array.from({length: rows}, () => Array(cols).fill(null));
   const col = Array.from({length: rows}, () => Array(cols).fill(false));
 
-  // Floor (rows 16-17)
   for (let r = 16; r <= 17; r++)
     for (let c = 0; c < cols; c++) { bg[r][c] = 'pl_floor'; col[r][c] = true; }
 
-  // Top platform row 1 (full width, includes DK spawn side)
-  for (let c = 0; c < cols; c++) obj[1][c] = 'pl_platform';
+  for (let c = 0; c < cols; c++)  obj[1][c]  = 'pl_platform';
+  for (let c = 5; c < cols; c++)  obj[4][c]  = 'pl_platform';
+  for (let c = 0; c <= 14; c++)   obj[7][c]  = 'pl_platform';
+  for (let c = 5; c < cols; c++)  obj[10][c] = 'pl_platform';
+  for (let c = 0; c <= 14; c++)   obj[13][c] = 'pl_platform';
 
-  // Alternating platforms (objects layer only — one-way, NOT in collision)
-  // Row 4: right-heavy (cols 5-19), gap left (0-4)
-  for (let c = 5; c < cols; c++) obj[4][c] = 'pl_platform';
-  // Row 7: left-heavy (cols 0-14), gap right (15-19)
-  for (let c = 0; c <= 14; c++) obj[7][c] = 'pl_platform';
-  // Row 10: right-heavy (cols 5-19)
-  for (let c = 5; c < cols; c++) obj[10][c] = 'pl_platform';
-  // Row 13: left-heavy (cols 0-14)
-  for (let c = 0; c <= 14; c++) obj[13][c] = 'pl_platform';
-
-  // Ladders (bridge the vertical gaps between platforms)
-  // Each ladder: from just-above-lower-platform up to just-below-upper-platform
-  // Ladder col 13: floor → row 13 (rows 14-15)
   for (let r = 14; r <= 15; r++) obj[r][13] = 'pl_ladder';
-  // Ladder col 6: row 13 → row 10 (rows 11-12)
-  for (let r = 11; r <= 12; r++) obj[r][6] = 'pl_ladder';
-  // Ladder col 13: row 10 → row 7 (rows 8-9)
-  for (let r = 8; r <= 9; r++) obj[r][13] = 'pl_ladder';
-  // Ladder col 6: row 7 → row 4 (rows 5-6)
-  for (let r = 5; r <= 6; r++) obj[r][6] = 'pl_ladder';
-  // Ladder col 13: row 4 → row 1 (rows 2-3)
-  for (let r = 2; r <= 3; r++) obj[r][13] = 'pl_ladder';
+  for (let r = 11; r <= 12; r++) obj[r][6]  = 'pl_ladder';
+  for (let r = 8;  r <= 9;  r++) obj[r][13] = 'pl_ladder';
+  for (let r = 5;  r <= 6;  r++) obj[r][6]  = 'pl_ladder';
+  for (let r = 2;  r <= 3;  r++) obj[r][13] = 'pl_ladder';
 
-  // DK and princess (decorative, top area)
   obj[0][1]  = 'pl_dk';
   obj[0][18] = 'pl_princess';
 
@@ -208,7 +287,7 @@ const { bg, objects, collision } = buildPlatformerScene(cols, rows);
 
 const SCENE = {
   worldCols: cols, worldRows: rows,
-  bgColor:   30,
+  bgColor: 30,
   playerStart: { tileX: 2, tileY: 14 },
   music: 'game',
   layerBG:        bg,
@@ -221,7 +300,6 @@ registerScenes({ game: SCENE });
 
 // ================================================================
 // LADDER HELPERS
-// Build a fast Set of ladder tile positions from the objects layer.
 // ================================================================
 const ladderSet = new Set();
 for (let r = 0; r < rows; r++)
@@ -231,7 +309,6 @@ for (let r = 0; r < rows; r++)
 function ladderAt(tx, ty) { return ladderSet.has(`${tx},${ty}`); }
 
 function playerOverlapsLadder(px, py) {
-  // Player center tile
   const cx = ((px + 4) / TILE_SIZE) | 0;
   const cy = ((py + 4) / TILE_SIZE) | 0;
   return ladderAt(cx, cy) || ladderAt(cx, cy - 1);
@@ -239,22 +316,19 @@ function playerOverlapsLadder(px, py) {
 
 // ================================================================
 // ONE-WAY PLATFORM COLLISION
-// Returns the snapped Y if the player lands on a platform this frame
-// while falling (dy > 0). Returns null otherwise.
 // ================================================================
 function checkPlatformLand(px, py, newPy) {
   if (newPy <= py) return null;
-  const tx0 = ((px + HBX) / TILE_SIZE) | 0;
-  const tx1 = ((px + HBX + HBW - 1) / TILE_SIZE) | 0;
-  const oldFeet = py  + HBY + HBH - 1;
+  const tx0     = ((px + HBX) / TILE_SIZE) | 0;
+  const tx1     = ((px + HBX + HBW - 1) / TILE_SIZE) | 0;
+  const oldFeet = py   + HBY + HBH - 1;
   const newFeet = newPy + HBY + HBH - 1;
   for (const pr of PLAT_ROWS) {
     const platTop = pr * TILE_SIZE;
     if (oldFeet < platTop && newFeet >= platTop) {
-      for (let tx = tx0; tx <= tx1; tx++) {
+      for (let tx = tx0; tx <= tx1; tx++)
         if (objects[pr]?.[tx] === 'pl_platform')
-          return platTop - HBH - HBY;  // snap y so feet rest on platform top
-      }
+          return platTop - HBH - HBY;
     }
   }
   return null;
@@ -264,29 +338,28 @@ function isOnPlatform(px, py) {
   const tx0 = ((px + HBX) / TILE_SIZE) | 0;
   const tx1 = ((px + HBX + HBW - 1) / TILE_SIZE) | 0;
   const feetTile = ((py + HBY + HBH) / TILE_SIZE) | 0;
-  for (let tx = tx0; tx <= tx1; tx++) {
+  for (let tx = tx0; tx <= tx1; tx++)
     if (objects[feetTile]?.[tx] === 'pl_platform') return true;
-  }
   return false;
 }
 
 // ================================================================
 // GAME STATE
 // ================================================================
-let score      = 0;
-let lives      = 3;
-let gameState  = 'play'; // 'play' | 'dead' | 'win' | 'over'
-let deadTimer  = 0;
-let winTimer   = 0;
+let score       = 0;
+let lives       = 3;
+let gameState   = 'play';
+let deadTimer   = 0;
+let winTimer    = 0;
 let barrelTimer = 0;
-let nextBarrelDir = 1; // 1=right, alternates
-let climbing   = false; // player on ladder
-let vy         = 0;    // player vertical velocity (physics)
-let grounded   = false;
+let nextBarrelDir = 1;
+let climbing    = false;
+let vy          = 0;
+let grounded    = false;
 let facingRight = true;
 
 // ================================================================
-// ENTITY INIT
+// PLAYER ENTITY
 // ================================================================
 playerId = world.createEntity({
   persistent: true,
@@ -294,57 +367,171 @@ playerId = world.createEntity({
   transform:  { x: 2 * TILE_SIZE, y: 14 * TILE_SIZE },
   velocity:   { dx: 0, dy: 0, speed: WALK_SPEED },
   animator:   createAnimator({
-    idle:   { frames: ['pl_idle'],               durations: 0.2  },
-    walk:   { frames: ['pl_walk0', 'pl_walk1'],  durations: 0.16 },
-    jump:   { frames: ['pl_jump'],               durations: 0.2  },
-    climb:  { frames: ['pl_climb'],              durations: 0.3  },
+    idle:  { frames: ['pl_idle'],               durations: 0.20 },
+    walk:  { frames: ['pl_walk0', 'pl_walk1'],  durations: 0.16 },
+    jump:  { frames: ['pl_jump'],               durations: 0.20 },
+    climb: { frames: ['pl_climb'],              durations: 0.30 },
   }, 'idle'),
-  collider:   true,
-  // ── Damage system ────────────────────────────────────────────
-  // hp tracks remaining lives; each barrel hit costs 1.
-  // iframeMax: 1.5 s of invincibility + sprite flicker per hit.
+  collider: true,
   damageable: {
-    hp:        lives,
-    maxHp:     lives,
-    iframes:   0,
-    iframeMax: 1.5,
-    team:      'player',
+    hp: lives, maxHp: lives,
+    iframes: 0, iframeMax: 1.5,
+    team: 'player',
     onHit(vid, aid, amount) {
-      // Keep lives in sync with damageable.hp so overlays stay correct.
       lives = world.get(vid, 'damageable').hp;
       if (gameState !== 'play') return;
+      gameState = 'dead'; deadTimer = 2.5;
       if (lives <= 0) {
-        gameState = 'dead'; deadTimer = 2.5;
         sound.playSFX('die');
       } else {
-        gameState = 'dead'; deadTimer = 2.5;
         sound.playSFX('hurt');
-        // Emit hit particles at player position.
         const tf = world.get(vid, 'transform');
         if (tf) emitBurst(tf.x + 4, tf.y + 4, 'hit');
       }
     },
-    onDeath(vid, aid) {
-      // hp already 0; transition to game-over is handled via onHit.
-    },
+    onDeath() { /* handled in onHit */ },
   },
 });
 
+// ================================================================
+// ENEMY FACTORY
+// ================================================================
+function spawnEnemy(tileX, tileY, dir) {
+  world.createEntity({
+    transform:  { x: tileX * TILE_SIZE, y: tileY * TILE_SIZE },
+    sprite:     { name: 'pl_enemy0', flipX: dir < 0 },
+    enemy:      { dir, speed: 22, vy: 0, animTimer: 0 },
+    damageable: {
+      hp: 3, maxHp: 3,
+      iframes: 0, iframeMax: 0.4,
+      team: 'enemy',
+      onHit(vid) {
+        const tf = world.get(vid, 'transform');
+        if (tf) emitBurst(tf.x + 4, tf.y + 4, 'hit');
+      },
+      onDeath(vid) {
+        const tf = world.get(vid, 'transform');
+        if (tf) emitBurst(tf.x + 4, tf.y + 4, 'levelup');
+        sound.playSFX('enemy_die');
+        score += 100;
+        world.destroyEntity(vid);
+      },
+    },
+    damager: { damage: 1, team: 'enemy', knockback: 45 },
+  });
+}
+
+function spawnInitialEnemies() {
+  for (const id of world.query('enemy')) world.destroyEntity(id);
+  spawnEnemy( 7, 13, -1);
+  spawnEnemy(12, 13,  1);
+  spawnEnemy( 6, 10,  1);
+  spawnEnemy(14, 10, -1);
+  spawnEnemy( 7,  7,  1);
+  spawnEnemy( 5,  4,  1);
+  spawnEnemy(15,  4, -1);
+}
+
+// ================================================================
+// ENEMY AI SYSTEM
+// Walk horizontally; reverse on wall or platform edge.
+// Each enemy carries its own vy for gravity.
+// ================================================================
+function sysEnemyAI(delta) {
+  for (const id of world.query('enemy', 'transform', 'sprite')) {
+    const tf = world.get(id, 'transform');
+    const e  = world.get(id, 'enemy');
+    const sp = world.get(id, 'sprite');
+    if (!tf || !e || !sp) continue;
+
+    // ── Gravity ──────────────────────────────────────────────
+    e.vy += GRAVITY * delta;
+    const newY = tf.y + e.vy * delta;
+    const snap = checkPlatformLand(tf.x, tf.y, newY);
+    if (snap !== null) {
+      tf.y = snap; e.vy = 0;
+    } else {
+      const cY = Math.min(worldState.h - TILE_SIZE, newY);
+      if (collidesAt(tf.x, cY)) e.vy = 0;
+      else tf.y = cY;
+    }
+
+    // ── Horizontal (wall + ledge detection) ──────────────────
+    const nextX   = tf.x + e.dir * e.speed * delta;
+    const wallHit = collidesAt(Math.max(0, Math.min(worldState.w - TILE_SIZE, nextX)), tf.y);
+
+    const edgeTX = ((tf.x + e.dir * (TILE_SIZE + 2)) / TILE_SIZE) | 0;
+    const edgeTY = ((tf.y + TILE_SIZE + 3) / TILE_SIZE) | 0;
+    const floorAhead = isSolid(edgeTX, edgeTY)
+                    || objects[edgeTY]?.[edgeTX] === 'pl_platform'
+                    || objects[edgeTY]?.[edgeTX] === 'pl_floor';
+
+    if (wallHit || !floorAhead) {
+      e.dir *= -1;
+    } else {
+      tf.x = Math.max(0, Math.min(worldState.w - TILE_SIZE, nextX));
+    }
+
+    // ── Sprite ───────────────────────────────────────────────
+    sp.flipX = e.dir < 0;
+    e.animTimer += delta;
+    if (e.animTimer >= 0.25) {
+      e.animTimer -= 0.25;
+      sp.name = sp.name === 'pl_enemy0' ? 'pl_enemy1' : 'pl_enemy0';
+    }
+  }
+}
+
+// ================================================================
+// BARREL SPAWNER + PHYSICS
+// ================================================================
 function spawnBarrel() {
-  // Barrels spawn just below the top platform (row 2), at DK's side (col 2)
   world.createEntity({
     transform: { x: 2 * TILE_SIZE, y: 2 * TILE_SIZE },
     velocity:  { dx: BARREL_VX * nextBarrelDir, dy: 0, speed: 0 },
     barrel:    { vy: 0, dir: nextBarrelDir },
     sprite:    { name: 'pl_barrel', flipX: false },
-    // ── Damage system: barrels deal 1 HP per contact ─────────
     damager:   { damage: 1, team: 'enemy', knockback: 60 },
   });
   nextBarrelDir *= -1;
 }
 
+function sysBarrelSpawner(delta) {
+  if (gameState !== 'play') return;
+  barrelTimer += delta;
+  if (barrelTimer >= BARREL_SPAWN_RATE) { barrelTimer = 0; spawnBarrel(); }
+}
+
+function sysBarrelPhysics(delta) {
+  for (const id of world.query('transform', 'barrel')) {
+    const tf = world.get(id, 'transform');
+    const b  = world.get(id, 'barrel');
+    if (!tf || !b) continue;
+
+    b.vy += GRAVITY * delta;
+
+    const newX = tf.x + b.dir * BARREL_VX * delta;
+    if (newX < 0 || newX + TILE_SIZE > worldState.w) { world.destroyEntity(id); continue; }
+    tf.x = newX;
+
+    const newY = tf.y + b.vy * delta;
+    const snap = checkPlatformLand(tf.x, tf.y, newY);
+    if (snap !== null) { tf.y = snap; b.vy = 0; }
+    else {
+      const cY = Math.min(worldState.h - TILE_SIZE, newY);
+      if (collidesAt(tf.x, cY)) b.vy = 0;
+      else tf.y = cY;
+    }
+
+    if (tf.y + TILE_SIZE >= worldState.h - TILE_SIZE) {
+      score += 50; sound.playSFX('score');
+      world.destroyEntity(id);
+    }
+  }
+}
+
 // ================================================================
-// PLAYER PHYSICS SYSTEM (replaces sysInput + sysMovement for player)
+// PLAYER PHYSICS + INPUT + ATTACK
 // ================================================================
 function sysPlayerPhysics(delta) {
   if (gameState !== 'play') return;
@@ -353,16 +540,45 @@ function sysPlayerPhysics(delta) {
   const anim = world.get(playerId, 'animator');
   if (!tf || !anim) return;
 
+  // ── Weapon cycle (E / Q) ──────────────────────────────────
+  if (input.pressed('itemNext')) {
+    weaponIdx = (weaponIdx + 1) % WEAPON_ORDER.length;
+    weaponCooldown = 0;
+    sound.playSFX('weapon_swap');
+  }
+  if (input.pressed('itemPrev')) {
+    weaponIdx = (weaponIdx + WEAPON_ORDER.length - 1) % WEAPON_ORDER.length;
+    weaponCooldown = 0;
+    sound.playSFX('weapon_swap');
+  }
+
+  // ── Cooldown tick ─────────────────────────────────────────
+  if (weaponCooldown > 0) weaponCooldown = Math.max(0, weaponCooldown - delta);
+
+  // ── Attack (X) ────────────────────────────────────────────
+  if (input.pressed('attack') && weaponCooldown <= 0) {
+    const weapon = WEAPONS[WEAPON_ORDER[weaponIdx]];
+    // Direction: hold UP to fire/swing upward, else use facing direction.
+    const ax = input.axis();
+    let dirX = facingRight ? 1 : -1;
+    let dirY = 0;
+    if (input.held('up') || ax.y < -0.15) { dirX = 0; dirY = -1; }
+    spawnAttack(playerId, weapon, tf.x, tf.y, dirX, dirY);
+    weaponCooldown = weapon.cooldownMax;
+    sound.playSFX(weapon.sfx);
+  }
+
+  // ── Movement ──────────────────────────────────────────────
   const ax = input.axis();
   let dx = 0;
   if (input.held('left')  || ax.x < -0.15) { dx = -WALK_SPEED; facingRight = false; }
   if (input.held('right') || ax.x >  0.15) { dx =  WALK_SPEED; facingRight = true;  }
 
-  const wantClimb = input.held('up') || ax.y < -0.15;
+  const wantClimb   = input.held('up')   || ax.y < -0.15;
   const wantDescend = input.held('down') || ax.y >  0.15;
   const canGrabLadder = playerOverlapsLadder(tf.x, tf.y);
 
-  // --- Ladder mode ---
+  // Ladder.
   if (climbing) {
     if (!canGrabLadder) { climbing = false; }
     else {
@@ -376,137 +592,68 @@ function sysPlayerPhysics(delta) {
       return;
     }
   }
+  if (wantClimb && canGrabLadder && !climbing) { climbing = true; vy = 0; return; }
 
-  // Grab ladder when pressing up near one
-  if (wantClimb && canGrabLadder && !climbing) {
-    climbing = true;
-    vy = 0;
-    return;
-  }
-
-  // --- Normal gravity physics ---
+  // Gravity.
   vy += GRAVITY * delta;
 
-  // Jump
+  // Jump.
   if ((input.pressed('action') || input.pressed('up')) && (grounded || isOnPlatform(tf.x, tf.y))) {
-    vy = JUMP_VY;
-    grounded = false;
+    vy = JUMP_VY; grounded = false;
     sound.playSFX('jump');
   }
 
-  // Horizontal move with wall collision
+  // Horizontal.
   const newX = Math.max(0, Math.min(worldState.w - TILE_SIZE, tf.x + dx * delta));
   if (!collidesAt(newX, tf.y)) tf.x = newX;
 
-  // Vertical move: floor (isSolid) + one-way platforms
+  // Vertical.
   const desiredY = tf.y + vy * delta;
   const platSnap = checkPlatformLand(tf.x, tf.y, desiredY);
-
   if (platSnap !== null) {
     tf.y = platSnap; vy = 0; grounded = true;
   } else {
-    const clampedY = Math.max(0, Math.min(worldState.h - TILE_SIZE, desiredY));
-    if (collidesAt(tf.x, clampedY)) {
+    const cY = Math.max(0, Math.min(worldState.h - TILE_SIZE, desiredY));
+    if (collidesAt(tf.x, cY)) {
       if (vy > 0) grounded = true;
       vy = 0;
-      // tf.y stays unchanged — blocked by solid tile
     } else {
-      tf.y = clampedY;
+      tf.y = cY;
       grounded = isGrounded(tf.x, tf.y) || isOnPlatform(tf.x, tf.y);
     }
   }
-
-  // Clamp to floor at bottom
   if (tf.y + TILE_SIZE >= worldState.h - TILE_SIZE) {
-    tf.y = worldState.h - 2 * TILE_SIZE;
-    vy = 0; grounded = true;
+    tf.y = worldState.h - 2 * TILE_SIZE; vy = 0; grounded = true;
   }
 
-  // Animation
-  if (!grounded && !climbing) {
-    animatorPlay(anim, 'jump');
-  } else if (dx !== 0) {
-    animatorPlay(anim, 'walk');
-  } else {
-    animatorPlay(anim, 'idle');
-  }
+  // Animation.
+  if      (!grounded && !climbing) animatorPlay(anim, 'jump');
+  else if (dx !== 0)               animatorPlay(anim, 'walk');
+  else                             animatorPlay(anim, 'idle');
   anim.flipX = !facingRight;
 
-  // Win condition: player reaches top platform (row 1)
-  const playerTileY = (tf.y / TILE_SIZE) | 0;
-  if (playerTileY <= 1) {
-    gameState = 'win';
-    winTimer  = 3.5;
+  // Win.
+  if ((tf.y / TILE_SIZE | 0) <= 1) {
+    gameState = 'win'; winTimer = 3.5;
     score += 1000;
     sound.playSFX('win');
   }
 }
 
 // ================================================================
-// BARREL PHYSICS SYSTEM
-// Barrels use gravity + one-way platform collision.
-// Each barrel entity has a 'barrel' component with { vy, dir }.
+// GAME STATE TRANSITIONS
 // ================================================================
-function sysBarrelPhysics(delta) {
-  for (const id of world.query('transform', 'barrel')) {
-    const tf  = world.get(id, 'transform');
-    const b   = world.get(id, 'barrel');
-
-    b.vy += GRAVITY * delta;
-
-    // Horizontal
-    const newX = tf.x + b.dir * BARREL_VX * delta;
-    // Barrel hits screen edge — destroy
-    if (newX < 0 || newX + TILE_SIZE > worldState.w) {
-      world.destroyEntity(id); continue;
-    }
-    tf.x = newX;
-
-    // Vertical
-    const newY = tf.y + b.vy * delta;
-    const snap = checkPlatformLand(tf.x, tf.y, newY);
-    if (snap !== null) {
-      tf.y = snap; b.vy = 0;
-    } else {
-      const clampedY = Math.min(worldState.h - TILE_SIZE, newY);
-      if (collidesAt(tf.x, clampedY)) {
-        tf.y = tf.y; b.vy = 0; // hit floor — stop
-      } else {
-        tf.y = clampedY;
-      }
-    }
-
-    // Fell off bottom — destroy
-    if (tf.y + TILE_SIZE >= worldState.h - TILE_SIZE) {
-      score += 50;
-      sound.playSFX('score');
-      world.destroyEntity(id);
-      continue;
-    }
-  }
+function _resetPlayer() {
+  climbing = false; vy = 0; grounded = false;
+  const tf = world.get(playerId, 'transform');
+  if (tf) { tf.x = 2 * TILE_SIZE; tf.y = 14 * TILE_SIZE; }
 }
 
-// ================================================================
-// COLLISION DETECTION: player vs barrels
-// Handled by sysDamage() via damageable/damager components.
-// sysBarrelPlayerCollision removed — replaced by sysDamage(delta).
-// ================================================================
-
-// ================================================================
-// BARREL SPAWNER
-// ================================================================
-function sysBarrelSpawner(delta) {
-  if (gameState !== 'play') return;
-  barrelTimer += delta;
-  if (barrelTimer >= BARREL_SPAWN_RATE) {
-    barrelTimer = 0;
-    spawnBarrel();
-  }
+function _resetDamageable(hp) {
+  const d = world.get(playerId, 'damageable');
+  if (d) { d.hp = hp; d.maxHp = hp; d.iframes = 0; }
 }
 
-// ================================================================
-// GAME STATE MANAGER (dead / win / over transitions)
-// ================================================================
 function sysGameState(delta) {
   if (gameState === 'dead') {
     deadTimer -= delta;
@@ -514,52 +661,56 @@ function sysGameState(delta) {
       if (lives <= 0) {
         gameState = 'over';
       } else {
-        // Respawn
-        gameState = 'play';
-        climbing  = false;
-        vy        = 0;
-        grounded  = false;
-        barrelTimer = 0;
-        // Destroy all barrels
+        gameState = 'play'; barrelTimer = 0;
         for (const id of world.query('barrel')) world.destroyEntity(id);
-        // Reset player position
-        const tf = world.get(playerId, 'transform');
-        if (tf) { tf.x = 2 * TILE_SIZE; tf.y = 14 * TILE_SIZE; }
-        // Re-sync damageable hp to current lives; clear lingering iframes.
-        const dmgable = world.get(playerId, 'damageable');
-        if (dmgable) { dmgable.hp = lives; dmgable.iframes = 0; }
+        _resetPlayer();
+        _resetDamageable(lives);
       }
     }
   } else if (gameState === 'win') {
     winTimer -= delta;
     if (winTimer <= 0) {
-      // Restart with next round (faster barrels eventually)
-      gameState = 'play';
-      climbing  = false;
-      vy = 0; grounded = false;
-      barrelTimer = 0;
-      for (const id of world.query('barrel')) world.destroyEntity(id);
-      const tf = world.get(playerId, 'transform');
-      if (tf) { tf.x = 2 * TILE_SIZE; tf.y = 14 * TILE_SIZE; }
-      const dmgW = world.get(playerId, 'damageable');
-      if (dmgW) { dmgW.hp = lives; dmgW.iframes = 0; }
+      gameState = 'play'; barrelTimer = 0; weaponCooldown = 0;
+      for (const id of world.query('barrel'))     world.destroyEntity(id);
+      for (const id of world.query('swing'))      world.destroyEntity(id);
+      for (const id of world.query('projectile')) world.destroyEntity(id);
+      _resetPlayer();
+      _resetDamageable(lives);
+      spawnInitialEnemies();
     }
   }
 }
 
 // ================================================================
-// HUD RENDERING
+// HUD
 // ================================================================
+const CD_BAR_W = 28, CD_BAR_H = 2;
+
 function renderHUD() {
-  // Top strip background
   fillRectPx(0, 0, LOGICAL_W, 8, 0);
 
   drawText(`SCORE:${score}`, 2, 1, 7);
 
   const livesStr = `LIVES:${Math.max(0, lives)}`;
   drawText(livesStr, LOGICAL_W - livesStr.length * CHAR_W - 2, 1, 27);
+
+  // Weapon name centred.
+  const weapon = WEAPONS[WEAPON_ORDER[weaponIdx]];
+  const nameX  = ((LOGICAL_W - weapon.name.length * CHAR_W) / 2) | 0;
+  drawText(weapon.name, nameX, 1, 20);
+
+  // Cooldown bar: fills from left as cooldown expires.
+  const barX = ((LOGICAL_W - CD_BAR_W) / 2) | 0;
+  fillRectPx(barX, 7, CD_BAR_W, CD_BAR_H, 13);   // dark track
+  if (weaponCooldown < weapon.cooldownMax) {
+    const frac = 1 - weaponCooldown / weapon.cooldownMax;
+    fillRectPx(barX, 7, Math.round(CD_BAR_W * frac), CD_BAR_H, 20); // white fill
+  }
 }
 
+// ================================================================
+// OVERLAYS
+// ================================================================
 function renderOverlay(elapsed) {
   if (gameState === 'dead' && lives > 0) {
     drawBox(44, 60, 72, 24, 1, 27);
@@ -577,16 +728,15 @@ function renderOverlay(elapsed) {
     drawText('NEXT ROUND...', 42, 80, 21);
   }
 
-  // Retry on Game Over
   if (gameState === 'over' && input.pressed('action')) {
     score = 0; lives = 3;
-    gameState = 'play';
-    climbing = false; vy = 0; grounded = false; barrelTimer = 0;
-    for (const id of world.query('barrel')) world.destroyEntity(id);
-    const tf = world.get(playerId, 'transform');
-    if (tf) { tf.x = 2 * TILE_SIZE; tf.y = 14 * TILE_SIZE; }
-    const dmgR = world.get(playerId, 'damageable');
-    if (dmgR) { dmgR.hp = 3; dmgR.maxHp = 3; dmgR.iframes = 0; }
+    gameState = 'play'; barrelTimer = 0; weaponCooldown = 0; weaponIdx = 0;
+    for (const id of world.query('barrel'))     world.destroyEntity(id);
+    for (const id of world.query('swing'))      world.destroyEntity(id);
+    for (const id of world.query('projectile')) world.destroyEntity(id);
+    _resetPlayer();
+    _resetDamageable(3);
+    spawnInitialEnemies();
   }
 }
 
@@ -594,36 +744,32 @@ function renderOverlay(elapsed) {
 // MAIN LOOP
 // ================================================================
 let elapsed = 0, lastTime = 0;
-let fps = 0, fpsTimer = 0, fpsFrames = 0;
 
-// Load scene (no save/load for this demo)
 loadScene('game');
-
-// Manually set player position after loadScene (scene playerStart override)
-{
-  const tf = world.get(playerId, 'transform');
-  if (tf) { tf.x = 2 * TILE_SIZE; tf.y = 14 * TILE_SIZE; }
-}
+{ const tf = world.get(playerId, 'transform');
+  if (tf) { tf.x = 2 * TILE_SIZE; tf.y = 14 * TILE_SIZE; } }
+spawnInitialEnemies();
 
 function loop(ts) {
   const delta = Math.min((ts - lastTime) / 1000, 0.05);
   lastTime = ts; elapsed += delta;
-  fpsFrames++; fpsTimer += delta;
-  if (fpsTimer >= 0.5) { fps = Math.round(fpsFrames / fpsTimer); fpsTimer = fpsFrames = 0; }
 
   engineTick(delta);
   input.update();
 
-  // Systems (no camera scroll — camera stays at 0,0 for single screen)
+  // -- Logic (order matters: physics before damage) --
   sysGameState(delta);
   sysPlayerPhysics(delta);
   sysBarrelSpawner(delta);
   sysBarrelPhysics(delta);
-  sysDamage(delta);  // replaces sysBarrelPlayerCollision
+  sysEnemyAI(delta);
+  sysDamage(delta);      // barrel/enemy→player; swing/projectile→enemy
+  sysProjectile(delta);  // move & cull projectiles
+  sysSwing(delta);       // cull expired melee hitboxes
   sysAnimation(delta);
 
-  // Render
-  clearBuffer(30); // deep dark blue sky
+  // -- Render --
+  clearBuffer(30);
   drawTilemap(SCENE.layerBG,      elapsed);
   drawTilemap(SCENE.layerObjects, elapsed);
   sysRender();
