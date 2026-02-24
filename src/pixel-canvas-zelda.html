@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Pixel Canvas v5.1 — Overworld Demo</title>
+<title>Pixel Canvas v5.1 — Overworld Demo (Enhanced)</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -27,7 +27,7 @@
 <body>
 <canvas id="screen"></canvas>
 <div id="debug"></div>
-<div id="hint">WASD: move  |  Z: talk/open/use item  |  E/Q: cycle items  |  M: minimap  |  F5: save  |  F9: load</div>
+<div id="hint">WASD: move  |  Z: talk/open/use item  |  X: attack  |  E/Q: cycle items  |  M: minimap  |  F5: save  |  F9: load</div>
 
 <script src="pixel-canvas-engine.js"></script>
 
@@ -38,6 +38,7 @@
 // SPRITES
 // ================================================================
 const SPRITES = {
+  // ---- Terrain ----
   grass: [
      9, 9, 8, 9, 9, 9, 8, 9,   8, 9, 9, 9, 8, 9, 9, 8,
      9, 9, 8, 9, 9, 8, 9, 9,  11,11,11, 9,11,11,11,11,
@@ -68,6 +69,20 @@ const SPRITES = {
     23,23,23,23,23,23,23,23,  13,23,23,23,13,23,23,13,
     23,13,23,23,23,13,23,23,  23,23,13,23,23,23,13,23,
   ],
+  // Deeper cave floor — slightly darker stone
+  cave_floor_b2: [
+    30,30,29,30,30,30,30,30,  30,30,30,30,29,30,30,30,
+    30,30,30,29,30,30,30,30,  23,23,23,30,23,23,23,23,
+    23,23,23,23,23,23,23,23,  30,23,23,23,30,23,23,30,
+    23,30,23,23,23,30,23,23,  23,23,30,23,23,23,30,23,
+  ],
+  // Deepest cave floor
+  cave_floor_b3: [
+    14,14,30,14,14,14,14,14,  14,14,14,14,30,14,14,14,
+    14,14,14,30,14,14,14,14,  30,30,30,14,30,30,30,30,
+    30,30,30,30,30,30,30,30,  14,30,30,30,14,30,30,14,
+    30,14,30,30,30,14,30,30,  30,30,14,30,30,30,14,30,
+  ],
   water0: [
     18,17,18,18,18,17,18,18,  18,18,17,18,18,18,17,18,
     15,18,18,18,15,18,18,18,  18,15,18,18,18,15,18,18,
@@ -80,6 +95,7 @@ const SPRITES = {
     15,18,18,18,15,18,18,18,  18,15,18,18,18,15,18,18,
     18,18,18,17,18,18,18,17,  18,18,17,18,18,18,17,18,
   ],
+  // ---- Decor ----
   tree: [
     null,null, 8,null,null, 8,null,null,
     null, 8,   8,  8,  8,  8,  8,null,
@@ -120,6 +136,28 @@ const SPRITES = {
     null,null,25,25,25,null,null,null,
     null,null,null,null,null,null,null,null,
   ],
+  // Stair portals
+  stairs_down: [
+    20,20,20,20,20,20,20,20,
+    null,22,22,22,22,22,22,22,
+    null,null,22,22,22,22,22,22,
+    null,null,null,22,22,22,22,22,
+    null,null,null,null,22,22,22,22,
+    null,null,null,null,null,22,22,22,
+    null,null,null,null,null,null,22,22,
+    null,null,null,null,null,null,null,22,
+  ],
+  stairs_up: [
+    22,null,null,null,null,null,null,null,
+    22,22,null,null,null,null,null,null,
+    22,22,22,null,null,null,null,null,
+    22,22,22,22,null,null,null,null,
+    22,22,22,22,22,null,null,null,
+    22,22,22,22,22,22,null,null,
+    22,22,22,22,22,22,22,null,
+    20,20,20,20,20,20,20,20,
+  ],
+  // ---- Items ----
   coin_item: [
     null,null, 7, 7, 7, 7,null,null,
     null, 7,  20, 7, 7, 7, 7,null,
@@ -150,7 +188,6 @@ const SPRITES = {
     null,null,null, 7,null,null,null,null,
     null,null,null,null,null,null,null,null,
   ],
-  // Bomb — consumable item registered with a use handler
   bomb_item: [
     null,null,null, 3,null,null,null,null,
     null,null, 2,   2, 3,null,null,null,
@@ -161,7 +198,6 @@ const SPRITES = {
     null,null, 2,   2,null,null,null,null,
     null,null,null,null,null,null,null,null,
   ],
-  // Potion — consumable healing item
   potion_item: [
     null,null,null,20,20,null,null,null,
     null,null,20, 20,20, 20,null,null,
@@ -172,6 +208,69 @@ const SPRITES = {
     null,null,20, 20,20, 20,null,null,
     null,null,null,20,20,null,null,null,
   ],
+  // ---- Weapon pickups ----
+  sword_item: [
+    null,null,null,null,null,null, 7, 7,
+    null,null,null,null,null,20,20,null,
+    null,null,null,null,20,22,null,null,
+    null,null,null,20,22,null,null,null,
+    null,null,20,22,null, 3,null,null,
+    null,20,22,null, 3,null,null,null,
+    20,null,null, 3,null,null,null,null,
+    null,null,null,null,null,null,null,null,
+  ],
+  bow_item: [
+    null,null, 3,null,null,null,null,null,
+    null, 3,null, 3,null,null,null,null,
+       3,null,null, 3,null,null,null,null,
+       3,null,null,null, 3,null, 7,null,
+       3,null,null,null, 3, 7, 7,null,
+       3,null,null, 3, 7,null,null,null,
+    null, 3,null, 3,null,null,null,null,
+    null,null, 3,null,null,null,null,null,
+  ],
+  axe_item: [
+    null,null,22,22,null,null,null,null,
+    null,22,21,21,22,null,null,null,
+    22,21,21,21,21,22,null,null,
+    22,21,22,22,21,22,null,null,
+    null,22,null,null, 3,null,null,null,
+    null,null,null, 3,null,null,null,null,
+    null,null, 3,null,null,null,null,null,
+    null, 3,null,null,null,null,null,null,
+  ],
+  shield_item: [
+    null, 5, 5, 5, 5, 5,null,null,
+       5,18,18,18,18,18, 5,null,
+       5,18,20,18,20,18, 5,null,
+       5,18,18,18,18,18, 5,null,
+       5,18,18,18,18,18, 5,null,
+    null, 5,18,18,18, 5,null,null,
+    null,null, 5,18, 5,null,null,null,
+    null,null,null, 5,null,null,null,null,
+  ],
+  // ---- Combat sprites ----
+  sword_swing: [
+    null,null,null,null,null, 7,20,null,
+    null,null,null,null, 7,20,null,null,
+    null,null,null, 7,20,null,null,null,
+    null,null, 7,20,null,null,null,null,
+    null, 7,20,null,null,null,null,null,
+    null,null,null,null,null,null,null,null,
+    null,null,null,null,null,null,null,null,
+    null,null,null,null,null,null,null,null,
+  ],
+  arrow_proj: [
+    null,null,null,null,null,null,null,null,
+    null,null,null,null,null,null,null,null,
+    null,null,null,null,null,null,null, 7,
+    null, 3, 3, 3, 3, 3, 3, 3,
+    null,null,null,null,null,null,null, 7,
+    null,null,null,null,null,null,null,null,
+    null,null,null,null,null,null,null,null,
+    null,null,null,null,null,null,null,null,
+  ],
+  // ---- NPCs ----
   npc_a: [
     null,null,  7,  7,  7,  7,null,null,
     null,  7, 24,  7,  7, 24,  7,null,
@@ -192,6 +291,7 @@ const SPRITES = {
     null,  6,null,null,null,null,  6,null,
     null,  6,null,null,null,null,  6,null,
   ],
+  // ---- Player ----
   player_d0: [
     null,null,  6,  6,  6,  6,null,null,
     null,  6, 24,  6,  6, 24,  6,null,
@@ -262,6 +362,70 @@ const SPRITES = {
     null,null,null,  5,  5,null,null,null,
     null,null,null,null,  5,null,null,null,
   ],
+  // ---- Enemies ----
+  // Slime (cave level 1) — green blob
+  slime_0: [
+    null,null, 9, 9, 9, 9,null,null,
+    null, 9,  9, 9, 9, 9, 9,null,
+       9, 9, 11, 9,24, 9,11, 9,
+       9, 9,  9, 9, 9, 9, 9, 9,
+       9, 9,  9, 9, 9, 9, 9, 9,
+       9,11,  9, 9, 9, 9,11, 9,
+    null, 9,  9, 9, 9, 9, 9,null,
+    null,null, 9,null,null, 9,null,null,
+  ],
+  slime_1: [
+    null,null,null,null,null,null,null,null,
+    null, 9, 9, 9, 9, 9, 9,null,
+       9, 9,11, 9,24, 9,11, 9,
+       9, 9, 9, 9, 9, 9, 9, 9,
+       9, 9, 9, 9, 9, 9, 9, 9,
+    null, 9, 9, 9, 9, 9, 9,null,
+    null, 9,null,null,null,null, 9,null,
+    null,null,null,null,null,null,null,null,
+  ],
+  // Bat (cave level 2) — purple
+  bat_0: [
+    14,14,null,25,25,null,14,14,
+    14,null,25,25,25,25,null,14,
+    null,25,25,14,14,25,25,null,
+    25,25,14, 7,14, 7,14,25,
+    25,25,25,25,25,25,25,25,
+    null,25,25,25,25,25,null,null,
+    null,null,25,null,null,25,null,null,
+    null,null,null,null,null,null,null,null,
+  ],
+  bat_1: [
+    null,null,14,25,25,14,null,null,
+    null,14,25,25,25,25,14,null,
+    14,25,25,14,14,25,25,14,
+    25,25,14, 7,14, 7,14,25,
+    null,25,25,25,25,25,null,null,
+    null,null,25,25,25,null,null,null,
+    null,null,null,25,null,null,null,null,
+    null,null,null,null,null,null,null,null,
+  ],
+  // Skeleton (cave level 3) — bone white
+  skel_0: [
+    null,null,20,20,20,20,null,null,
+    null,20, 1,20,20, 1,20,null,
+    null,20,20,20,20,20,20,null,
+    null,22,20,22,22,20,22,null,
+      22,null,null,22,22,null,null,22,
+    null,22,22,22,22,22,22,null,
+    null,22,null,22,22,null,22,null,
+    null,null,null,null,null,null,null,null,
+  ],
+  skel_1: [
+    null,null,20,20,20,20,null,null,
+    null,20, 1,20,20, 1,20,null,
+    null,20,20,20,20,20,20,null,
+    null,22,20,22,22,20,22,null,
+    null,null,22,22,22,22,null,null,
+      22,22,null,22,22,null,22,22,
+      22,null,null,22,22,null,null,22,
+    null,null,null,null,null,null,null,null,
+  ],
 };
 
 buildSpriteCache(SPRITES);
@@ -295,6 +459,15 @@ sound.registerTracks({
         notes: 'A2:4 R:4 F2:4 R:4 G2:4 R:4 A2:8 R:4' },
     ],
   },
+  cave_deep: {
+    bpm: 55, loop: true,
+    channels: [
+      { instrument: 'sine',
+        notes: 'D3:3 R:1 C3:2 R:2 A2:4 R:2 D2:6 R:2 E2:3 R:1 F2:2 R:2 D2:8 R:4' },
+      { instrument: 'triangle',
+        notes: 'D2:6 R:2 C2:6 R:2 A1:8 R:8' },
+    ],
+  },
 });
 
 sound.registerSFX({
@@ -306,14 +479,18 @@ sound.registerSFX({
   coin:        { bpm:960, channels:[{ instrument:'square',   notes:'A5:0.06 C6:0.08 E6:0.12' }] },
   hurt:        { bpm:480, channels:[{ instrument:'square',   notes:'A4:0.06 G4:0.1' }] },
   heal:        { bpm:960, channels:[{ instrument:'triangle', notes:'E5:0.08 G5:0.08 C6:0.15' }] },
-  // Chest open: rising arpeggio
   chest_open:  { bpm:480, channels:[{ instrument:'square',   notes:'C5:0.08 E5:0.08 G5:0.08 C6:0.2' },
                                      { instrument:'triangle', notes:'C3:0.44' }] },
-  // Bomb: short rumble
   bomb:        { bpm:240, channels:[{ instrument:'square',   notes:'G3:0.1 F3:0.1 E3:0.1 D3:0.15' },
                                      { instrument:'triangle', notes:'C2:0.45' }] },
-  // Potion: gentle shimmer
   potion:      { bpm:960, channels:[{ instrument:'sine',     notes:'E5:0.08 G5:0.08 B5:0.08 E6:0.15' }] },
+  sword_swing: { bpm:480, channels:[{ instrument:'square',   notes:'G5:0.05 C6:0.07' }] },
+  bow_fire:    { bpm:480, channels:[{ instrument:'triangle', notes:'E6:0.04 A5:0.06' }] },
+  axe_swing:   { bpm:240, channels:[{ instrument:'square',   notes:'D4:0.1 A3:0.12' }] },
+  enemy_die:   { bpm:480, channels:[{ instrument:'square',   notes:'C5:0.05 A4:0.05 F4:0.08' }] },
+  weapon_get:  { bpm:480, channels:[{ instrument:'square',   notes:'C5:0.08 E5:0.08 G5:0.08 C6:0.2' },
+                                     { instrument:'triangle', notes:'G3:0.44' }] },
+  stairs:      { bpm:480, channels:[{ instrument:'sine',     notes:'C4:0.1 E4:0.1 G4:0.15' }] },
 });
 
 // ================================================================
@@ -376,7 +553,10 @@ function sysPickups() {
           hud.selectedSlot = 0;
           sound.playSFX('confirm');
           emitBurst(tf.x + 4, tf.y + 4, 'levelup');
-          showNote('KEY OBTAINED! [E/Q to cycle items]');
+          showNote('KEY OBTAINED!');
+          break;
+        default:
+          showNote(p.type.toUpperCase() + ' [E/Q to cycle items]');
           break;
       }
       world.destroyEntity(id);
@@ -389,6 +569,201 @@ function sysPickupFlags() {
     if (!world.has(id, 'pickup')) {
       setFlag(flagName);
       _pickupFlags.delete(id);
+    }
+  }
+}
+
+// ================================================================
+// COMBAT / WEAPON SYSTEM
+// ================================================================
+const ZELDA_WEAPONS = {
+  sword_basic: {
+    name: 'SWORD', type: 'melee',
+    damage: 1, cooldownMax: 0.4,
+    swingW: 14, swingH: 14, swingLife: 0.15,
+    swingSprite: 'sword_swing', knockback: 55,
+    sfx: 'sword_swing', team: 'player',
+  },
+  sword_item: {
+    name: 'IRON SWORD', type: 'melee',
+    damage: 2, cooldownMax: 0.35,
+    swingW: 16, swingH: 16, swingLife: 0.18,
+    swingSprite: 'sword_swing', knockback: 75,
+    sfx: 'sword_swing', team: 'player',
+  },
+  bow_item: {
+    name: 'BOW', type: 'ranged',
+    damage: 1, cooldownMax: 0.65,
+    projSprite: 'arrow_proj', projSpeed: 135, projLife: 1.5,
+    piercing: false, knockback: 20,
+    sfx: 'bow_fire', team: 'player',
+  },
+  axe_item: {
+    name: 'WAR AXE', type: 'melee',
+    damage: 3, cooldownMax: 0.85,
+    swingW: 18, swingH: 18, swingLife: 0.22,
+    swingSprite: 'sword_swing', knockback: 110,
+    sfx: 'axe_swing', team: 'player',
+  },
+  shield_item: null, // passive — handled in damageable onHit
+};
+
+// Player facing direction, updated in sysInput override
+let playerFacing = { dx: 1, dy: 0 };
+let attackCooldown = 0;
+
+function sysPlayerAttack(delta) {
+  if (dialog.active || cutscene.isInputLocked() || sceneTransition.state !== 'none') return;
+  if (attackCooldown > 0) { attackCooldown = Math.max(0, attackCooldown - delta); return; }
+  if (!input.pressed('attack')) return;
+
+  const ptf = world.get(playerId, 'transform');
+  if (!ptf) return;
+
+  // Resolve active weapon: selected item slot or default sword
+  const selectedItem = hud.selectedSlot !== null ? hud.items[hud.selectedSlot] : null;
+  let weaponKey = 'sword_basic';
+  if (selectedItem === 'sword_item') weaponKey = 'sword_item';
+  else if (selectedItem === 'bow_item')   weaponKey = 'bow_item';
+  else if (selectedItem === 'axe_item')   weaponKey = 'axe_item';
+  else if (selectedItem === 'shield_item') {
+    showNote('SHIELD IS PASSIVE — EQUIP A WEAPON');
+    return;
+  }
+
+  const weapon = ZELDA_WEAPONS[weaponKey];
+  if (!weapon) return;
+
+  spawnAttack(playerId, weapon, ptf.x, ptf.y, playerFacing.dx, playerFacing.dy);
+  attackCooldown = weapon.cooldownMax;
+  sound.playSFX(weapon.sfx);
+  showNote(weapon.name + '!', 0.6);
+}
+
+// ================================================================
+// ENEMY SYSTEM
+// ================================================================
+const ENEMY_DEFS = {
+  slime: {
+    frames: ['slime_0','slime_1'],
+    speed: 28, aggroRange: 64,
+    hp: 2, maxHp: 2,
+    damage: 1, knockback: 30,
+    drop: 'coin',
+  },
+  bat: {
+    frames: ['bat_0','bat_1'],
+    speed: 52, aggroRange: 88,
+    hp: 3, maxHp: 3,
+    damage: 1, knockback: 40,
+    drop: 'coin',
+  },
+  skeleton: {
+    frames: ['skel_0','skel_1'],
+    speed: 22, aggroRange: 72,
+    hp: 5, maxHp: 5,
+    damage: 2, knockback: 55,
+    drop: 'heart',
+  },
+};
+
+function spawnEnemy(type, tileX, tileY) {
+  const def = ENEMY_DEFS[type];
+  if (!def) return;
+  world.createEntity({
+    transform: { x: tileX * TILE_SIZE, y: tileY * TILE_SIZE },
+    sprite:    { name: def.frames[0], flipX: false },
+    velocity:  { dx: 0, dy: 0, speed: def.speed },
+    collider:  true,
+    enemy: {
+      type,
+      speed:       def.speed,
+      aggroRange:  def.aggroRange,
+      frames:      def.frames,
+      frameIdx:    0,
+      animTimer:   0,
+      wanderTimer: Math.random() * 2,
+      wanderDx:    Math.cos(Math.random() * Math.PI * 2),
+      wanderDy:    Math.sin(Math.random() * Math.PI * 2),
+      drop:        def.drop,
+    },
+    damageable: {
+      hp: def.hp, maxHp: def.maxHp,
+      iframes: 0, iframeMax: 0.45,
+      team: 'enemy',
+      onHit(vid) {
+        const tf = world.get(vid, 'transform');
+        if (tf) emitBurst(tf.x + 4, tf.y + 4, 'hit');
+      },
+      onDeath(vid) {
+        const e  = world.get(vid, 'enemy');
+        const tf = world.get(vid, 'transform');
+        if (tf && e) {
+          emitBurst(tf.x + 4, tf.y + 4, 'levelup');
+          // Drop item — no flag (enemy drops are ephemeral)
+          world.createEntity({
+            transform: { x: tf.x, y: tf.y },
+            sprite:    { name: e.drop + '_item', flipX: false },
+            pickup:    { type: e.drop, collected: false },
+          });
+        }
+        sound.playSFX('enemy_die');
+        world.destroyEntity(vid);
+      },
+    },
+    damager: { damage: def.damage, team: 'enemy', knockback: def.knockback },
+  });
+}
+
+function sysEnemyAI(delta) {
+  const ptf = world.get(playerId, 'transform');
+  if (!ptf) return;
+
+  for (const id of world.query('enemy', 'transform', 'velocity')) {
+    const tf  = world.get(id, 'transform');
+    const vel = world.get(id, 'velocity');
+    const e   = world.get(id, 'enemy');
+    const sp  = world.get(id, 'sprite');
+    const dmg = world.get(id, 'damageable');
+    if (!tf || !vel || !e) continue;
+
+    // Freeze during knockback iframe period
+    if (dmg && dmg.iframes > dmg.iframeMax * 0.6) {
+      vel.dx *= 0.85; vel.dy *= 0.85;
+      continue;
+    }
+
+    const dx   = ptf.x - tf.x;
+    const dy   = ptf.y - tf.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    if (dist < e.aggroRange && dist > 2) {
+      // Chase player
+      vel.dx = (dx / dist) * e.speed;
+      vel.dy = (dy / dist) * e.speed;
+      e.wanderTimer = 0;
+    } else {
+      // Wander
+      e.wanderTimer -= delta;
+      if (e.wanderTimer <= 0) {
+        e.wanderTimer = 1.2 + Math.random() * 2.0;
+        const angle = Math.random() * Math.PI * 2;
+        e.wanderDx = Math.cos(angle);
+        e.wanderDy = Math.sin(angle);
+      }
+      vel.dx = e.wanderDx * e.speed * 0.45;
+      vel.dy = e.wanderDy * e.speed * 0.45;
+    }
+
+    // Animate
+    if (sp) {
+      e.animTimer += delta;
+      if (e.animTimer >= 0.28) {
+        e.animTimer -= 0.28;
+        e.frameIdx = (e.frameIdx + 1) % e.frames.length;
+        sp.name = e.frames[e.frameIdx];
+      }
+      if (Math.abs(vel.dx) > 1) sp.flipX = vel.dx < 0;
     }
   }
 }
@@ -425,26 +800,12 @@ function sysPortalSparkles(delta) {
 
 // ================================================================
 // ITEM USE HANDLERS
-//
-// key_item  — no active use effect; it's consumed automatically
-//             when the player enters the locked cave chamber.
-//             The handler just informs the player.
-//
-// bomb_item — explosion burst + particle damage display.
-//
-// potion_item — restores 4 HP, consumed on use.
 // ================================================================
-
-// Called after all items are potentially placed in slots.
 function registerAllItemUseHandlers() {
-
-  // Key: passive item. Pressing Z while selected shows a hint.
-  hud.registerItemUse('key_item', (slot) => {
+  hud.registerItemUse('key_item', () => {
     showNote('USE THE KEY NEAR A LOCKED DOOR');
-    return false; // suppress default SFX
+    return false;
   });
-
-  // Bomb: deals area-burst effect (cosmetic here), consumes item.
   hud.registerItemUse('bomb_item', (slot) => {
     const ptf = world.get(playerId, 'transform');
     if (!ptf) return;
@@ -452,18 +813,12 @@ function registerAllItemUseHandlers() {
     emitBurst(ptf.x + 4, ptf.y + 4, 'hit');
     emitBurst(ptf.x + 4, ptf.y + 4, 'smoke');
     showNote('BOOM!');
-    // Remove from inventory and deselect.
     hud.clearItem(slot);
     hud.selectedSlot = null;
-    return false; // suppress default SFX (we played bomb)
+    return false;
   });
-
-  // Potion: restore 4 HP, consume item.
   hud.registerItemUse('potion_item', (slot) => {
-    if (hud.hp >= hud.maxHp) {
-      showNote('ALREADY AT FULL HP');
-      return false;
-    }
+    if (hud.hp >= hud.maxHp) { showNote('ALREADY AT FULL HP'); return false; }
     hud.addHp(4);
     sound.playSFX('potion');
     const ptf = world.get(playerId, 'transform');
@@ -473,64 +828,23 @@ function registerAllItemUseHandlers() {
     hud.selectedSlot = null;
     return false;
   });
-}
-
-// ================================================================
-// SCENE DEFINITIONS
-// ================================================================
-function buildOverworld(cols, rows) {
-  const bg  = Array.from({length: rows}, () => Array(cols).fill('grass'));
-  const obj = Array.from({length: rows}, () => Array(cols).fill(null));
-  const col = Array.from({length: rows}, () => Array(cols).fill(false));
-
-  for (let r = 4; r <= 6; r++)
-    for (let c = 5; c <= 9; c++) { bg[r][c] = 'water'; col[r][c] = true; }
-  for (let r = 9; r <= 11; r++)
-    for (let c = 6; c <= 10; c++) bg[r][c] = 'stone';
-  for (let r = 20; r <= 25; r++)
-    for (let c = 15; c <= 22; c++)
-      if (r === 20 || r === 25 || c === 15 || c === 22)
-        { obj[r][c] = 'wall'; col[r][c] = true; }
-
-  [[1,1],[1,4],[2,8],[3,18],[6,14],[0,12],[9,25],[11,28],[16,5],[13,8],[22,2],[24,6],
-   [5,32],[12,38],[20,30],[28,5],[30,12],[32,20],[25,35]].forEach(([r,c]) => {
-    if (r < rows && c < cols) { obj[r][c] = 'tree'; col[r][c] = true; }
+  hud.registerItemUse('sword_item', () => {
+    showNote('IRON SWORD — PRESS X TO ATTACK');
+    return false;
   });
-  [[3,3],[4,12],[7,3],[8,18],[13,7],[19,12],[22,28],[28,15]].forEach(([r,c]) => {
-    if (r < rows && c < cols) obj[r][c] = 'flower';
+  hud.registerItemUse('bow_item', () => {
+    showNote('BOW — PRESS X TO FIRE');
+    return false;
   });
-
-  obj[8][35] = 'portal';
-  return { bg, objects: obj, collision: col };
-}
-
-function buildCave(cols, rows) {
-  const bg  = Array.from({length: rows}, (_, r) =>
-    Array.from({length: cols}, (_, c) =>
-      (r === 0 || r === rows-1 || c === 0 || c === cols-1) ? 'cave_wall' : 'cave_floor'));
-  const obj = Array.from({length: rows}, () => Array(cols).fill(null));
-  const col = Array.from({length: rows}, (_, r) =>
-    Array.from({length: cols}, (_, c) =>
-      r === 0 || r === rows-1 || c === 0 || c === cols-1));
-
-  for (let r = 4; r <= 12; r++)
-    for (let c = 5; c <= 14; c++)
-      if ((r === 4 || r === 12 || c === 5 || c === 14) &&
-          !(r === 8 && (c === 5 || c === 14)))
-        { bg[r][c] = 'cave_wall'; col[r][c] = true; }
-
-  [[2,5],[2,10],[2,16],[16,3],[16,10],[16,16],[6,8],[9,11],[7,2],[14,17]].forEach(([r,c]) => {
-    if (r < rows && c < cols && !col[r][c]) obj[r][c] = 'crystal';
+  hud.registerItemUse('axe_item', () => {
+    showNote('WAR AXE — PRESS X TO SWING');
+    return false;
   });
-  obj[8][1]  = 'portal'; col[8][1] = false;
-  bg[8][0]   = 'cave_floor'; col[8][0] = false;
-  return { bg, objects: obj, collision: col };
+  hud.registerItemUse('shield_item', () => {
+    showNote('SHIELD IS PASSIVE — REDUCES DAMAGE');
+    return false;
+  });
 }
-
-const OW_COLS = 40, OW_ROWS = 36;
-const CAVE_COLS = 20, CAVE_ROWS = 18;
-const { bg: owBg, objects: owObj, collision: owCol } = buildOverworld(OW_COLS, OW_ROWS);
-const { bg: cvBg, objects: cvObj, collision: cvCol } = buildCave(CAVE_COLS, CAVE_ROWS);
 
 // ================================================================
 // NPC DIALOG BRANCHES
@@ -593,6 +907,8 @@ function buildCaveEntryCutscene(sageId) {
         'WAIT! STOP RIGHT THERE.',
         'YOU ARE THE FIRST TO\nENTER IN MANY YEARS.',
         'TAKE THIS HEART. YOU\nWILL NEED IT AHEAD.',
+        'BEWARE: SLIMES LURK\nIN THE DARK. PRESS X\nTO SWING YOUR SWORD.',
+        'STAIRS LEAD DEEPER.\nEACH LEVEL IS MORE\nDANGEROUS THAN THE LAST.',
       ],
     },
     { cmd:'flag',  name: 'enteredCave' },
@@ -602,177 +918,496 @@ function buildCaveEntryCutscene(sageId) {
 }
 
 // ================================================================
+// MAP BUILDERS
+// ================================================================
+function buildOverworld(cols, rows) {
+  const bg  = Array.from({length: rows}, () => Array(cols).fill('grass'));
+  const obj = Array.from({length: rows}, () => Array(cols).fill(null));
+  const col = Array.from({length: rows}, () => Array(cols).fill(false));
+
+  // Water lake
+  for (let r = 4; r <= 6; r++)
+    for (let c = 5; c <= 9; c++) { bg[r][c] = 'water'; col[r][c] = true; }
+  // Stone ruins
+  for (let r = 9; r <= 11; r++)
+    for (let c = 6; c <= 10; c++) bg[r][c] = 'stone';
+  // Walled village
+  for (let r = 20; r <= 25; r++)
+    for (let c = 15; c <= 22; c++)
+      if (r === 20 || r === 25 || c === 15 || c === 22)
+        { obj[r][c] = 'wall'; col[r][c] = true; }
+  // Trees
+  [[1,1],[1,4],[2,8],[3,18],[6,14],[0,12],[9,25],[11,28],[16,5],[13,8],[22,2],[24,6],
+   [5,32],[12,38],[20,30],[28,5],[30,12],[32,20],[25,35]].forEach(([r,c]) => {
+    if (r < rows && c < cols) { obj[r][c] = 'tree'; col[r][c] = true; }
+  });
+  // Flowers
+  [[3,3],[4,12],[7,3],[8,18],[13,7],[19,12],[22,28],[28,15]].forEach(([r,c]) => {
+    if (r < rows && c < cols) obj[r][c] = 'flower';
+  });
+
+  obj[8][35] = 'portal';
+  return { bg, objects: obj, collision: col };
+}
+
+function buildCaveL1(cols, rows) {
+  const bg  = Array.from({length: rows}, (_, r) =>
+    Array.from({length: cols}, (_, c) =>
+      (r === 0 || r === rows-1 || c === 0 || c === cols-1) ? 'cave_wall' : 'cave_floor'));
+  const obj = Array.from({length: rows}, () => Array(cols).fill(null));
+  const col = Array.from({length: rows}, (_, r) =>
+    Array.from({length: cols}, (_, c) =>
+      r === 0 || r === rows-1 || c === 0 || c === cols-1));
+
+  // Inner room walls
+  for (let r = 4; r <= 12; r++)
+    for (let c = 5; c <= 14; c++)
+      if ((r === 4 || r === 12 || c === 5 || c === 14) &&
+          !(r === 8 && (c === 5 || c === 14)))
+        { bg[r][c] = 'cave_wall'; col[r][c] = true; }
+
+  // Crystals
+  [[2,5],[2,10],[2,16],[16,3],[16,10],[16,16],[6,8],[9,11],[7,2],[14,17]].forEach(([r,c]) => {
+    if (r < rows && c < cols && !col[r][c]) obj[r][c] = 'crystal';
+  });
+
+  // Staircase down to B2
+  obj[15][17] = 'stairs_down';
+
+  // Portal back to overworld
+  obj[8][1]  = 'portal'; col[8][1] = false;
+  bg[8][0]   = 'cave_floor'; col[8][0] = false;
+  return { bg, objects: obj, collision: col };
+}
+
+function buildCaveL2(cols, rows) {
+  const bg  = Array.from({length: rows}, (_, r) =>
+    Array.from({length: cols}, (_, c) =>
+      (r === 0 || r === rows-1 || c === 0 || c === cols-1) ? 'cave_wall' : 'cave_floor_b2'));
+  const obj = Array.from({length: rows}, () => Array(cols).fill(null));
+  const col = Array.from({length: rows}, (_, r) =>
+    Array.from({length: cols}, (_, c) =>
+      r === 0 || r === rows-1 || c === 0 || c === cols-1));
+
+  // Pillar columns
+  [[3,4],[3,10],[3,16],[8,7],[8,13],[14,4],[14,10],[14,16]].forEach(([r,c]) => {
+    if (r < rows && c < cols) { bg[r][c] = 'cave_wall'; col[r][c] = true; }
+  });
+  // Corridor walls splitting the room
+  for (let c = 4; c <= 16; c++)
+    if (c !== 7 && c !== 13)
+      { bg[6][c] = 'cave_wall'; col[6][c] = true; }
+  for (let c = 4; c <= 16; c++)
+    if (c !== 7 && c !== 13)
+      { bg[11][c] = 'cave_wall'; col[11][c] = true; }
+
+  // Crystals decorating walls
+  [[2,2],[2,8],[2,14],[16,2],[16,8],[16,14],[5,2],[5,17],[9,2],[9,17]].forEach(([r,c]) => {
+    if (r < rows && c < cols && !col[r][c]) obj[r][c] = 'crystal';
+  });
+
+  // Stairs up (to cave L1) and down (to cave L3)
+  obj[15][2] = 'stairs_up';
+  obj[2][17] = 'stairs_down';
+
+  return { bg, objects: obj, collision: col };
+}
+
+function buildCaveL3(cols, rows) {
+  const bg  = Array.from({length: rows}, (_, r) =>
+    Array.from({length: cols}, (_, c) =>
+      (r === 0 || r === rows-1 || c === 0 || c === cols-1) ? 'cave_wall' : 'cave_floor_b3'));
+  const obj = Array.from({length: rows}, () => Array(cols).fill(null));
+  const col = Array.from({length: rows}, (_, r) =>
+    Array.from({length: cols}, (_, c) =>
+      r === 0 || r === rows-1 || c === 0 || c === cols-1));
+
+  // Boss chamber walls — cross pattern
+  for (let r = 5; r <= 12; r++) {
+    bg[r][5]  = 'cave_wall'; col[r][5]  = true;
+    bg[r][14] = 'cave_wall'; col[r][14] = true;
+  }
+  for (let c = 5; c <= 14; c++) {
+    bg[5][c]  = 'cave_wall'; col[5][c]  = true;
+    bg[12][c] = 'cave_wall'; col[12][c] = true;
+  }
+  // Chamber door openings
+  col[8][5]  = false; bg[8][5]  = 'cave_floor_b3';
+  col[8][14] = false; bg[8][14] = 'cave_floor_b3';
+  col[5][9]  = false; bg[5][9]  = 'cave_floor_b3';
+  col[12][9] = false; bg[12][9] = 'cave_floor_b3';
+
+  // Crystals
+  [[2,2],[2,8],[2,17],[16,2],[16,8],[16,17],[3,12],[15,12]].forEach(([r,c]) => {
+    if (r < rows && c < cols && !col[r][c]) obj[r][c] = 'crystal';
+  });
+
+  // Stairs up to cave B2
+  obj[15][17] = 'stairs_up';
+
+  return { bg, objects: obj, collision: col };
+}
+
+// ================================================================
+// SCENE DIMENSIONS
+// ================================================================
+const OW_COLS   = 40, OW_ROWS   = 36;
+const CAVE_COLS = 20, CAVE_ROWS = 18;
+
+const { bg: owBg,  objects: owObj,  collision: owCol  } = buildOverworld(OW_COLS, OW_ROWS);
+const { bg: c1Bg,  objects: c1Obj,  collision: c1Col  } = buildCaveL1(CAVE_COLS, CAVE_ROWS);
+const { bg: c2Bg,  objects: c2Obj,  collision: c2Col  } = buildCaveL2(CAVE_COLS, CAVE_ROWS);
+const { bg: c3Bg,  objects: c3Obj,  collision: c3Col  } = buildCaveL3(CAVE_COLS, CAVE_ROWS);
+
+// ================================================================
 // SCENES
 // ================================================================
 const SCENE_DATA = {
-  overworld: (() => {
-    return {
-      worldCols: OW_COLS, worldRows: OW_ROWS, bgColor: 0,
-      playerStart: { tileX: 15, tileY: 15 },
-      music: 'overworld',
-      layerBG: owBg, layerObjects: owObj, layerCollision: owCol,
-      portals: [
-        { tileX: 35, tileY: 8, targetScene: 'cave', targetTileX: 3, targetTileY: 8 },
-      ],
-      // ---- Chests in the overworld ----
-      // Chest 1: near the village, drops a bomb.
-      // Chest 2: inside the stone ruins, drops a potion.
-      chests: [
-        {
-          tileX: 14, tileY: 20, flagName: 'chest_ow_bomb',
-          loot: [
-            {
-              sprite: 'bomb_item',
-              label: 'BOMB OBTAINED! [E/Q: cycle  Z: use]',
-              onPickup() {
-                // Put bomb in slot 1 (or first empty slot).
-                const slot = hud.items.indexOf(null);
-                if (slot >= 0) { hud.setItem(slot, 'bomb_item'); hud.selectedSlot = slot; }
-              },
-            },
-          ],
-        },
-        {
-          tileX: 9, tileY: 10, flagName: 'chest_ow_potion',
-          loot: [
-            {
-              sprite: 'potion_item',
-              label: 'POTION OBTAINED! [Z: use to restore HP]',
-              onPickup() {
-                const slot = hud.items.indexOf(null);
-                if (slot >= 0) { hud.setItem(slot, 'potion_item'); hud.selectedSlot = slot; }
-              },
-            },
-          ],
-        },
-      ],
-      npcs: [
-        {
-          tileX: 12, tileY: 12, sprite: 'npc_a', name: 'VILLAGER',
-          dialog:         ['...'],
-          dialogBranches: VILLAGER_BRANCHES,
-          patrol: {
-            speed: 20, waypointIdx: 0,
-            waypoints: [{x:12*8,y:12*8},{x:15*8,y:12*8},{x:15*8,y:15*8},{x:12*8,y:15*8}],
+  overworld: (() => ({
+    worldCols: OW_COLS, worldRows: OW_ROWS, bgColor: 0,
+    playerStart: { tileX: 15, tileY: 15 },
+    music: 'overworld',
+    layerBG: owBg, layerObjects: owObj, layerCollision: owCol,
+    portals: [
+      { tileX: 35, tileY: 8, targetScene: 'cave', targetTileX: 3, targetTileY: 8 },
+    ],
+    chests: [
+      // Original chests
+      {
+        tileX: 14, tileY: 20, flagName: 'chest_ow_bomb',
+        loot: [{
+          sprite: 'bomb_item',
+          label: 'BOMB OBTAINED! [E/Q: cycle  Z: use]',
+          onPickup() {
+            const slot = hud.items.indexOf(null);
+            if (slot >= 0) { hud.setItem(slot, 'bomb_item'); hud.selectedSlot = slot; }
           },
-        },
-        {
-          tileX: 7, tileY: 10, sprite: 'npc_b', name: 'SCHOLAR',
-          dialog:         ['AH, A NEW FACE!'],
-          dialogBranches: [
-            {
-              requires: ['rewarded'],
-              lines: ['LOOKS LIKE THE VILLAGER\nWAS PLEASED WITH YOUR\nADVENTURE. WELL DONE!'],
-            },
-            {
-              requires: ['hasKey'],
-              excludes: ['rewarded'],
-              lines: ['THAT KEY YOU CARRY...\nIT OPENS THE CRYSTAL\nCHAMBER DEEP INSIDE!'],
-            },
-            {
-              lines: [
-                'AH, A NEW FACE!',
-                'PRESS Z NEAR A CHEST\nOR NPC TO INTERACT.',
-                'E/Q CYCLES ITEMS.\nZ USES THE SELECTED ITEM.',
-                'M TOGGLES THE MINIMAP.',
-                'F5 SAVES, F9 LOADS.',
-              ],
-            },
-          ],
-        },
-      ],
-      onEnter() {
-        spawnPickupFlagged(10*8,  8*8, 'coin',  'coinOW1');
-        spawnPickupFlagged(18*8, 20*8, 'coin',  'coinOW2');
-        spawnPickupFlagged(25*8,  6*8, 'heart', 'heartOW');
+        }],
       },
-    };
-  })(),
+      {
+        tileX: 9, tileY: 10, flagName: 'chest_ow_potion',
+        loot: [{
+          sprite: 'potion_item',
+          label: 'POTION OBTAINED! [Z: use to restore HP]',
+          onPickup() {
+            const slot = hud.items.indexOf(null);
+            if (slot >= 0) { hud.setItem(slot, 'potion_item'); hud.selectedSlot = slot; }
+          },
+        }],
+      },
+      // === NEW WEAPON CHESTS ===
+      // Sword — east plains, near portal
+      {
+        tileX: 30, tileY: 15, flagName: 'chest_ow_sword',
+        loot: [{
+          sprite: 'sword_item',
+          label: 'IRON SWORD! [Select + X to attack]',
+          onPickup() {
+            sound.playSFX('weapon_get');
+            emitBurst(30*8+4, 15*8+4, 'levelup');
+            const slot = hud.items.indexOf(null);
+            if (slot >= 0) { hud.setItem(slot, 'sword_item'); hud.selectedSlot = slot; }
+            showNote('IRON SWORD — STRONGER ATTACKS!');
+          },
+        }],
+      },
+      // Bow — southwest open plains
+      {
+        tileX: 6, tileY: 28, flagName: 'chest_ow_bow',
+        loot: [{
+          sprite: 'bow_item',
+          label: 'BOW OBTAINED! [Select + X to fire arrow]',
+          onPickup() {
+            sound.playSFX('weapon_get');
+            emitBurst(6*8+4, 28*8+4, 'levelup');
+            const slot = hud.items.indexOf(null);
+            if (slot >= 0) { hud.setItem(slot, 'bow_item'); hud.selectedSlot = slot; }
+            showNote('BOW — RANGED ATTACKS!');
+          },
+        }],
+      },
+      // War Axe — far east, near cave
+      {
+        tileX: 34, tileY: 26, flagName: 'chest_ow_axe',
+        loot: [{
+          sprite: 'axe_item',
+          label: 'WAR AXE OBTAINED! [Heavy melee]',
+          onPickup() {
+            sound.playSFX('weapon_get');
+            emitBurst(34*8+4, 26*8+4, 'levelup');
+            const slot = hud.items.indexOf(null);
+            if (slot >= 0) { hud.setItem(slot, 'axe_item'); hud.selectedSlot = slot; }
+            showNote('WAR AXE — MASSIVE DAMAGE!');
+          },
+        }],
+      },
+      // Shield — north of village
+      {
+        tileX: 18, tileY: 18, flagName: 'chest_ow_shield',
+        loot: [{
+          sprite: 'shield_item',
+          label: 'SHIELD OBTAINED! [Passive: reduces damage]',
+          onPickup() {
+            sound.playSFX('weapon_get');
+            emitBurst(18*8+4, 18*8+4, 'levelup');
+            setFlag('hasShield');
+            const slot = hud.items.indexOf(null);
+            if (slot >= 0) { hud.setItem(slot, 'shield_item'); }
+            showNote('SHIELD — PASSIVE DEFENCE +1');
+          },
+        }],
+      },
+    ],
+    npcs: [
+      {
+        tileX: 12, tileY: 12, sprite: 'npc_a', name: 'VILLAGER',
+        dialog:         ['...'],
+        dialogBranches: VILLAGER_BRANCHES,
+        patrol: {
+          speed: 20, waypointIdx: 0,
+          waypoints: [{x:12*8,y:12*8},{x:15*8,y:12*8},{x:15*8,y:15*8},{x:12*8,y:15*8}],
+        },
+      },
+      {
+        tileX: 7, tileY: 10, sprite: 'npc_b', name: 'SCHOLAR',
+        dialog: ['AH, A NEW FACE!'],
+        dialogBranches: [
+          {
+            requires: ['rewarded'],
+            lines: ['LOOKS LIKE THE VILLAGER\nWAS PLEASED WITH YOUR\nADVENTURE. WELL DONE!'],
+          },
+          {
+            requires: ['hasKey'],
+            excludes: ['rewarded'],
+            lines: ['THAT KEY YOU CARRY...\nIT OPENS THE CRYSTAL\nCHAMBER DEEP INSIDE!'],
+          },
+          {
+            lines: [
+              'AH, A NEW FACE!',
+              'PRESS Z NEAR A CHEST\nOR NPC TO INTERACT.',
+              'PRESS X TO ATTACK\nWITH YOUR SWORD.',
+              'WEAPON CHESTS ARE\nHIDDEN ACROSS THE LAND.\nEXPLORE WELL!',
+              'E/Q CYCLES ITEMS.\nZ USES THE SELECTED ITEM.',
+              'M TOGGLES THE MINIMAP.',
+            ],
+          },
+        ],
+      },
+    ],
+    onEnter() {
+      spawnPickupFlagged(10*8,  8*8, 'coin',  'coinOW1');
+      spawnPickupFlagged(18*8, 20*8, 'coin',  'coinOW2');
+      spawnPickupFlagged(25*8,  6*8, 'heart', 'heartOW');
+      // Extra coins scattered around overworld
+      spawnPickupFlagged(32*8,  3*8, 'coin',  'coinOW3');
+      spawnPickupFlagged( 3*8, 22*8, 'coin',  'coinOW4');
+      spawnPickupFlagged(22*8, 30*8, 'coin',  'coinOW5');
+    },
+  }))(),
 
-  cave: (() => {
-    return {
-      worldCols: CAVE_COLS, worldRows: CAVE_ROWS, bgColor: 30,
-      playerStart: { tileX: 3, tileY: 8 },
-      music: 'cave',
-      layerBG: cvBg, layerObjects: cvObj, layerCollision: cvCol,
-      portals: [
-        { tileX: 1, tileY: 8, targetScene: 'overworld', targetTileX: 34, targetTileY: 8 },
-      ],
-      // ---- Chest in the cave: drops the key ----
-      chests: [
-        {
-          tileX: 11, tileY: 6, flagName: 'chest_cave_key',
-          loot: [
-            {
-              sprite: 'key_item',
-              label: 'KEY OBTAINED!',
-              onPickup() {
-                setFlag('hasKey');
-                const slot = hud.items.indexOf(null);
-                if (slot >= 0) { hud.setItem(slot, 'key_item'); hud.selectedSlot = slot; }
-              },
-            },
-          ],
-        },
-        // Second cave chest: a bonus potion for the return trip.
-        {
-          tileX: 16, tileY: 14, flagName: 'chest_cave_potion',
-          loot: [
-            {
-              sprite: 'potion_item',
-              label: 'POTION FOUND IN THE DEPTHS!',
-              onPickup() {
-                const slot = hud.items.indexOf(null);
-                if (slot >= 0) { hud.setItem(slot, 'potion_item'); hud.selectedSlot = slot; }
-              },
-            },
-          ],
-        },
-      ],
-      npcs: [
-        {
-          tileX: 12, tileY: 8, sprite: 'npc_b', name: 'CAVE SAGE',
-          dialog:         ['...'],
-          dialogBranches: [
-            {
-              requires: ['foundCrystal'],
-              lines: ['YOU FOUND IT! RETURN\nTO THE VILLAGE AND\nTELL THE VILLAGER.'],
-            },
-            {
-              requires: ['enteredCave', 'hasKey'],
-              excludes: ['foundCrystal'],
-              lines: ['THE CRYSTAL LIES\nFURTHER IN.', 'THE KEY WILL OPEN\nTHE CHAMBER.'],
-            },
-            {
-              requires: ['enteredCave'],
-              excludes: ['hasKey'],
-              lines: ['A CHEST LIES TO THE\nNORTH-EAST. THE KEY\nINSIDE OPENS ALL.'],
-            },
-            {
-              lines: ['SEEK THE CRYSTAL\nTHAT LIES WITHIN\nTHESE WALLS.'],
-            },
-          ],
-        },
-      ],
-      onEnter() {
-        spawnPickupFlagged(13*8, 8*8, 'coin',  'crystalCave');
-        spawnPickupFlagged( 8*8,14*8, 'heart', 'heartCave');
+  // ---- Cave Level 1 (slimes) ----
+  cave: (() => ({
+    worldCols: CAVE_COLS, worldRows: CAVE_ROWS, bgColor: 30,
+    playerStart: { tileX: 3, tileY: 8 },
+    music: 'cave',
+    layerBG: c1Bg, layerObjects: c1Obj, layerCollision: c1Col,
+    portals: [
+      { tileX: 1,  tileY: 8,  targetScene: 'overworld', targetTileX: 34, targetTileY: 8 },
+      { tileX: 17, tileY: 15, targetScene: 'cave_b2',   targetTileX: 3,  targetTileY: 14,
+        onActivate() { sound.playSFX('stairs'); showNote('DESCENDING TO B2...'); } },
+    ],
+    chests: [
+      {
+        tileX: 11, tileY: 6, flagName: 'chest_cave_key',
+        loot: [{
+          sprite: 'key_item',
+          label: 'KEY OBTAINED!',
+          onPickup() {
+            setFlag('hasKey');
+            const slot = hud.items.indexOf(null);
+            if (slot >= 0) { hud.setItem(slot, 'key_item'); hud.selectedSlot = slot; }
+          },
+        }],
+      },
+      {
+        tileX: 16, tileY: 14, flagName: 'chest_cave_potion',
+        loot: [{
+          sprite: 'potion_item',
+          label: 'POTION FOUND IN THE DEPTHS!',
+          onPickup() {
+            const slot = hud.items.indexOf(null);
+            if (slot >= 0) { hud.setItem(slot, 'potion_item'); hud.selectedSlot = slot; }
+          },
+        }],
+      },
+    ],
+    npcs: [
+      {
+        tileX: 12, tileY: 8, sprite: 'npc_b', name: 'CAVE SAGE',
+        dialog: ['...'],
+        dialogBranches: [
+          {
+            requires: ['foundCrystal'],
+            lines: ['YOU FOUND IT! RETURN\nTO THE VILLAGE AND\nTELL THE VILLAGER.'],
+          },
+          {
+            requires: ['enteredCave', 'hasKey'],
+            excludes: ['foundCrystal'],
+            lines: ['THE CRYSTAL LIES\nFURTHER IN.', 'THE KEY WILL OPEN\nTHE CHAMBER.'],
+          },
+          {
+            requires: ['enteredCave'],
+            excludes: ['hasKey'],
+            lines: ['A CHEST LIES TO THE\nNORTH-EAST. THE KEY\nINSIDE OPENS ALL.'],
+          },
+          {
+            lines: ['SEEK THE CRYSTAL\nTHAT LIES WITHIN\nTHESE WALLS.',
+                    'STAIRS IN THE SOUTH-EAST\nLEAD DEEPER. BEWARE\nBATS AND WORSE.'],
+          },
+        ],
+      },
+    ],
+    onEnter() {
+      spawnPickupFlagged(13*8, 8*8, 'coin',  'crystalCave');
+      spawnPickupFlagged( 8*8,14*8, 'heart', 'heartCave');
 
-        if (!getFlag('enteredCave')) {
-          const sageId = world.query('npcData').find(
-            id => world.get(id,'npcData').name === 'CAVE SAGE'
-          );
-          if (sageId !== undefined) {
-            setTimeout(() => cutscene.run(buildCaveEntryCutscene(sageId)), 80);
-          }
+      // Spawn slimes
+      if (!getFlag('cave_cleared')) {
+        spawnEnemy('slime',  7,  3);
+        spawnEnemy('slime', 16,  5);
+        spawnEnemy('slime',  5, 14);
+      }
+
+      if (!getFlag('enteredCave')) {
+        const sageId = world.query('npcData').find(
+          id => world.get(id,'npcData')?.name === 'CAVE SAGE'
+        );
+        if (sageId !== undefined) {
+          setTimeout(() => cutscene.run(buildCaveEntryCutscene(sageId)), 80);
         }
+      }
+    },
+  }))(),
+
+  // ---- Cave Level 2 (bats) ----
+  cave_b2: (() => ({
+    worldCols: CAVE_COLS, worldRows: CAVE_ROWS, bgColor: 30,
+    playerStart: { tileX: 3, tileY: 8 },
+    music: 'cave',
+    layerBG: c2Bg, layerObjects: c2Obj, layerCollision: c2Col,
+    portals: [
+      { tileX: 2,  tileY: 15, targetScene: 'cave',    targetTileX: 16, targetTileY: 14,
+        onActivate() { sound.playSFX('stairs'); showNote('ASCENDING TO B1...'); } },
+      { tileX: 17, tileY: 2,  targetScene: 'cave_b3', targetTileX: 16, targetTileY: 14,
+        onActivate() { sound.playSFX('stairs'); showNote('DESCENDING TO B3...'); } },
+    ],
+    chests: [
+      {
+        tileX: 10, tileY: 14, flagName: 'chest_b2_heart',
+        loot: [{
+          sprite: 'heart_item',
+          label: 'HEART CONTAINER! +2 MAX HP',
+          onPickup() {
+            hud.setMaxHp(hud.maxHp + 2);
+            hud.addHp(2);
+            sound.playSFX('heal');
+            emitBurst(10*8+4, 14*8+4, 'levelup');
+            showNote('+2 MAX HP!');
+          },
+        }],
       },
-    };
-  })(),
+      {
+        tileX: 16, tileY: 8, flagName: 'chest_b2_potion',
+        loot: [{
+          sprite: 'potion_item',
+          label: 'POTION FOUND!',
+          onPickup() {
+            const slot = hud.items.indexOf(null);
+            if (slot >= 0) { hud.setItem(slot, 'potion_item'); hud.selectedSlot = slot; }
+          },
+        }],
+      },
+    ],
+    npcs: [],
+    onEnter() {
+      spawnPickupFlagged( 9*8, 3*8, 'coin',  'coinB2a');
+      spawnPickupFlagged(14*8, 3*8, 'coin',  'coinB2b');
+      spawnPickupFlagged( 2*8, 8*8, 'heart', 'heartB2');
+
+      // Spawn bats — faster, more aggressive
+      spawnEnemy('bat',  5,  3);
+      spawnEnemy('bat', 14,  8);
+      spawnEnemy('bat',  8, 14);
+      spawnEnemy('bat', 16,  3);
+
+      if (!getFlag('sawB2Warning')) {
+        setFlag('sawB2Warning');
+        showNote('B2 — BATS AHEAD! STAY ALERT.', 3.0);
+      }
+    },
+  }))(),
+
+  // ---- Cave Level 3 (skeletons — boss floor) ----
+  cave_b3: (() => ({
+    worldCols: CAVE_COLS, worldRows: CAVE_ROWS, bgColor: 14,
+    playerStart: { tileX: 3, tileY: 8 },
+    music: 'cave_deep',
+    layerBG: c3Bg, layerObjects: c3Obj, layerCollision: c3Col,
+    portals: [
+      { tileX: 16, tileY: 15, targetScene: 'cave_b2', targetTileX: 16, targetTileY: 2,
+        onActivate() { sound.playSFX('stairs'); showNote('ASCENDING TO B2...'); } },
+    ],
+    chests: [
+      // Treasure chest at the boss chamber centre
+      {
+        tileX: 9, tileY: 8, flagName: 'chest_b3_treasure',
+        loot: [
+          {
+            sprite: 'coin_item',
+            label: 'ANCIENT GOLD! +10 COINS',
+            onPickup() {
+              hud.addCoins(10);
+              sound.playSFX('coin');
+              emitBurst(9*8+4, 8*8+4, 'coin');
+              showNote('ANCIENT HOARD! +10 COINS');
+            },
+          },
+          {
+            sprite: 'heart_item',
+            label: '+2 MAX HP',
+            onPickup() {
+              hud.setMaxHp(hud.maxHp + 2);
+              hud.addHp(2);
+              sound.playSFX('heal');
+              showNote('+2 MAX HP FROM ANCIENT RELIC!');
+            },
+          },
+        ],
+      },
+    ],
+    npcs: [],
+    onEnter() {
+      spawnPickupFlagged( 2*8,  2*8, 'coin',  'coinB3a');
+      spawnPickupFlagged(17*8,  2*8, 'coin',  'coinB3b');
+      spawnPickupFlagged( 2*8, 16*8, 'coin',  'coinB3c');
+
+      // Spawn skeletons — slow, tanky, high damage
+      spawnEnemy('skeleton',  2,  3);
+      spawnEnemy('skeleton', 17,  3);
+      spawnEnemy('skeleton',  2, 12);
+      spawnEnemy('skeleton', 10,  3);
+      spawnEnemy('skeleton', 10, 13);  // guards the treasure
+
+      if (!getFlag('sawB3Warning')) {
+        setFlag('sawB3Warning');
+        showNote('B3 — THE DEEP. SKELETONS GUARD\nANCIENT TREASURE.', 3.5);
+      }
+    },
+  }))(),
 };
 
 registerScenes(SCENE_DATA);
-setSaveKey('pixelCanvas_zelda_v51');
+setSaveKey('pixelCanvas_zelda_v51_enhanced');
 
 // ================================================================
 // QUEST WATCHERS
@@ -794,7 +1429,7 @@ hud.setHp(6);
 hud.setCoins(0);
 
 // ================================================================
-// ENTITY INIT
+// PLAYER ENTITY
 // ================================================================
 playerId = world.createEntity({
   persistent: true,
@@ -803,10 +1438,49 @@ playerId = world.createEntity({
   velocity:   { dx: 0, dy: 0, speed: 60 },
   animator:   createAnimator(CLIPS_PLAYER, 'idle'),
   collider:   true,
+  damageable: {
+    hp: 6, maxHp: 6,
+    iframes: 0, iframeMax: 1.5,
+    team: 'player',
+    onHit(vid, aid, amount) {
+      // Shield passive: reduce damage by 1 if equipped
+      const realDmg = getFlag('hasShield') ? Math.max(1, amount - 1) : amount;
+      const dmg = world.get(vid, 'damageable');
+      // Re-apply correct damage (sysDamage already applied full amount)
+      if (getFlag('hasShield') && realDmg < amount) {
+        dmg.hp = Math.min(dmg.maxHp, dmg.hp + (amount - realDmg));
+      }
+      hud.setHp(Math.max(0, dmg.hp));
+      sound.playSFX('hurt');
+      const tf = world.get(vid, 'transform');
+      if (tf) emitBurst(tf.x + 4, tf.y + 4, 'hit');
+      if (dmg.hp <= 0) showNote('DEFEATED! F9 TO RELOAD', 5.0);
+    },
+    onDeath() { /* handled in onHit */ },
+  },
 });
 
-// Register item use handlers (after playerId is set so handlers can read transform).
 registerAllItemUseHandlers();
+
+// ================================================================
+// OVERRIDE sysInput TO TRACK PLAYER FACING
+// ================================================================
+const _origSysInput = sysInput;
+// Wrap after init by hooking into the movement update via a separate tracker
+function sysTrackFacing() {
+  const vel = world.get(playerId, 'velocity');
+  if (!vel) return;
+  if (vel.dx !== 0 || vel.dy !== 0) {
+    // Normalise and store dominant axis
+    if (Math.abs(vel.dx) >= Math.abs(vel.dy)) {
+      playerFacing.dx = vel.dx > 0 ? 1 : -1;
+      playerFacing.dy = 0;
+    } else {
+      playerFacing.dx = 0;
+      playerFacing.dy = vel.dy > 0 ? 1 : -1;
+    }
+  }
+}
 
 // ================================================================
 // MINIMAP TOGGLE (M key)
@@ -838,16 +1512,22 @@ function loop(ts) {
   // Logic
   input.update();
   sysInput();
+  sysTrackFacing();
+  sysPlayerAttack(delta);
   sysAI(delta);
+  sysEnemyAI(delta);
   sysMovement(delta);
   sysSpatialHash();
   sysCamera();
   sysSceneTransition();
   sysAnimation(delta);
   sysDialog(elapsed);
+  sysDamage(delta);
+  sysProjectile(delta);
+  sysSwing(delta);
   sysPickups();
   sysPickupFlags();
-  sysChestLoot(delta);     // animate loot pop-up entities from opened chests
+  sysChestLoot(delta);
   sysFootsteps(delta);
   sysPortalSparkles(delta);
 
@@ -857,12 +1537,12 @@ function loop(ts) {
   drawTilemap(worldState.layerObjects, elapsed);
   sysRender();
   renderParticles();
-  renderHUD();             // always-on status bar; world is offset below it
+  renderHUD();
   if (minimapVisible) {
     renderMinimap({
       corner:     'bottomRight',
-      fixedMapW:  42,   // cave natural size: 20 tiles × 2px + 2px border
-      fixedMapH:  38,   // cave natural size: 18 tiles × 2px + 2px border
+      fixedMapW:  42,
+      fixedMapH:  38,
       showCamera: true,
     });
   }
@@ -875,13 +1555,14 @@ function loop(ts) {
   const ptf = world.get(playerId, 'transform');
   document.getElementById('debug').textContent =
     `FPS: ${fps}  SCENE: ${worldState.currentScene}\n` +
-    `PLAYER: ${ptf?.x|0},${ptf?.y|0}  TILE: ${ptf?.x/TILE_SIZE|0},${ptf?.y/TILE_SIZE|0}\n` +
+    `PLAYER: ${ptf?.x|0},${ptf?.y|0}  FACING: ${playerFacing.dx},${playerFacing.dy}\n` +
     `CAM: ${camera.x},${camera.y}  WORLD: ${worldState.w}x${worldState.h}px\n` +
     `FLAGS: met=${+getFlag('metVillager')} cave=${+getFlag('enteredCave')} ` +
-    `key=${+getFlag('hasKey')} crystal=${+getFlag('foundCrystal')} rew=${+getFlag('rewarded')}\n` +
+    `key=${+getFlag('hasKey')} crystal=${+getFlag('foundCrystal')} rew=${+getFlag('rewarded')} shield=${+getFlag('hasShield')}\n` +
     `HP: ${hud.hp}/${hud.maxHp}  COINS: ${hud.coins}  ` +
     `SLOT: ${hud.selectedSlot ?? 'none'}  ITEMS: [${hud.items.map(i=>i?i.replace('_item',''):'-').join('|')}]\n` +
-    `SCRIPT: ${cutscene.isRunning()?'running':'idle'}  MINIMAP: ${minimapVisible?'on':'off'}`;
+    `WEAPON: ${hud.selectedSlot !== null && hud.items[hud.selectedSlot] ? hud.items[hud.selectedSlot].replace('_item','').toUpperCase() : 'BASIC SWORD'}\n` +
+    `ATTACK_CD: ${attackCooldown.toFixed(2)}  ENEMIES: ${world.query('enemy').length}`;
 
   requestAnimationFrame(loop);
 }

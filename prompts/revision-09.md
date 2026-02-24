@@ -1,0 +1,1 @@
+For the zelda example HTML file, add various weapon pickups around the main world map.  Add further levels to the cave in the example, with stairs between levels.  Add different enemies to these lower levels of the cave.
