@@ -140,6 +140,7 @@ sound.registerSFX({
   die:   { bpm:480, channels:[{ instrument:'square',   notes:'G4:0.1 F4:0.1 E4:0.1 D4:0.15 C4:0.2' }] },
   win:   { bpm:240, channels:[{ instrument:'square',   notes:'C5:0.15 E5:0.15 G5:0.15 C6:0.4' }] },
   score: { bpm:960, channels:[{ instrument:'triangle', notes:'E6:0.05 G6:0.08' }] },
+  hurt:  { bpm:480, channels:[{ instrument:'square',   notes:'A4:0.06 G4:0.1' }] },
 });
 
 // ================================================================
@@ -298,7 +299,35 @@ playerId = world.createEntity({
     jump:   { frames: ['pl_jump'],               durations: 0.2  },
     climb:  { frames: ['pl_climb'],              durations: 0.3  },
   }, 'idle'),
-  collider: true,
+  collider:   true,
+  // ── Damage system ────────────────────────────────────────────
+  // hp tracks remaining lives; each barrel hit costs 1.
+  // iframeMax: 1.5 s of invincibility + sprite flicker per hit.
+  damageable: {
+    hp:        lives,
+    maxHp:     lives,
+    iframes:   0,
+    iframeMax: 1.5,
+    team:      'player',
+    onHit(vid, aid, amount) {
+      // Keep lives in sync with damageable.hp so overlays stay correct.
+      lives = world.get(vid, 'damageable').hp;
+      if (gameState !== 'play') return;
+      if (lives <= 0) {
+        gameState = 'dead'; deadTimer = 2.5;
+        sound.playSFX('die');
+      } else {
+        gameState = 'dead'; deadTimer = 2.5;
+        sound.playSFX('hurt');
+        // Emit hit particles at player position.
+        const tf = world.get(vid, 'transform');
+        if (tf) emitBurst(tf.x + 4, tf.y + 4, 'hit');
+      }
+    },
+    onDeath(vid, aid) {
+      // hp already 0; transition to game-over is handled via onHit.
+    },
+  },
 });
 
 function spawnBarrel() {
@@ -308,6 +337,8 @@ function spawnBarrel() {
     velocity:  { dx: BARREL_VX * nextBarrelDir, dy: 0, speed: 0 },
     barrel:    { vy: 0, dir: nextBarrelDir },
     sprite:    { name: 'pl_barrel', flipX: false },
+    // ── Damage system: barrels deal 1 HP per contact ─────────
+    damager:   { damage: 1, team: 'enemy', knockback: 60 },
   });
   nextBarrelDir *= -1;
 }
@@ -457,27 +488,9 @@ function sysBarrelPhysics(delta) {
 
 // ================================================================
 // COLLISION DETECTION: player vs barrels
+// Handled by sysDamage() via damageable/damager components.
+// sysBarrelPlayerCollision removed — replaced by sysDamage(delta).
 // ================================================================
-function sysBarrelPlayerCollision() {
-  if (gameState !== 'play') return;
-  const ptf = world.get(playerId, 'transform');
-  if (!ptf) return;
-  const px = ptf.x + HBX, py = ptf.y + HBY;
-
-  for (const id of world.query('barrel', 'transform')) {
-    const btf = world.get(id, 'transform');
-    const bx = btf.x + 1, by = btf.y + 1;
-    // Simple AABB overlap
-    if (px < bx + 6 && px + HBW > bx &&
-        py < by + 6 && py + HBH > by) {
-      gameState = 'dead';
-      deadTimer = 2.5;
-      lives--;
-      sound.playSFX('die');
-      return;
-    }
-  }
-}
 
 // ================================================================
 // BARREL SPAWNER
@@ -512,6 +525,9 @@ function sysGameState(delta) {
         // Reset player position
         const tf = world.get(playerId, 'transform');
         if (tf) { tf.x = 2 * TILE_SIZE; tf.y = 14 * TILE_SIZE; }
+        // Re-sync damageable hp to current lives; clear lingering iframes.
+        const dmgable = world.get(playerId, 'damageable');
+        if (dmgable) { dmgable.hp = lives; dmgable.iframes = 0; }
       }
     }
   } else if (gameState === 'win') {
@@ -525,6 +541,8 @@ function sysGameState(delta) {
       for (const id of world.query('barrel')) world.destroyEntity(id);
       const tf = world.get(playerId, 'transform');
       if (tf) { tf.x = 2 * TILE_SIZE; tf.y = 14 * TILE_SIZE; }
+      const dmgW = world.get(playerId, 'damageable');
+      if (dmgW) { dmgW.hp = lives; dmgW.iframes = 0; }
     }
   }
 }
@@ -567,6 +585,8 @@ function renderOverlay(elapsed) {
     for (const id of world.query('barrel')) world.destroyEntity(id);
     const tf = world.get(playerId, 'transform');
     if (tf) { tf.x = 2 * TILE_SIZE; tf.y = 14 * TILE_SIZE; }
+    const dmgR = world.get(playerId, 'damageable');
+    if (dmgR) { dmgR.hp = 3; dmgR.maxHp = 3; dmgR.iframes = 0; }
   }
 }
 
@@ -599,7 +619,7 @@ function loop(ts) {
   sysPlayerPhysics(delta);
   sysBarrelSpawner(delta);
   sysBarrelPhysics(delta);
-  sysBarrelPlayerCollision();
+  sysDamage(delta);  // replaces sysBarrelPlayerCollision
   sysAnimation(delta);
 
   // Render

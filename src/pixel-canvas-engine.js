@@ -1047,6 +1047,9 @@ function sysRender() {
       if (sp) { buf = sp.buf || spriteCache[sp.name]; flipX = !!sp.flipX; }
     }
     if (!buf) continue;
+    // Iframe flicker: hide damageable entity every other flicker tick.
+    const _dmgable = world.get(id, 'damageable');
+    if (_dmgable && _dmgable.iframes > 0 && !_iframeFlickerVisible) continue;
     const [sx, sy] = camera.toScreen(tf.x, tf.y);
     blitWorld(buf, sx | 0, sy | 0, flipX, flipY);
   }
@@ -1748,4 +1751,90 @@ function engineTick(delta) {
   if (saveNote.timer > 0) saveNote.timer -= delta;
   updateParticles(delta);
   cutscene.update(delta);
+  // Iframe flicker toggle.
+  _iframeFlickerTimer += delta;
+  if (_iframeFlickerTimer >= IFRAME_FLICKER_INTERVAL) {
+    _iframeFlickerTimer -= IFRAME_FLICKER_INTERVAL;
+    _iframeFlickerVisible = !_iframeFlickerVisible;
+  }
+}
+
+// ================================================================
+// SECTION 27: DAMAGE SYSTEM
+//
+// Components:
+//   damageable: {
+//     hp, maxHp,
+//     iframes,     -- invincibility seconds remaining
+//     iframeMax,   -- seconds granted per hit  (default 1.5)
+//     team,        -- string; hits only cross different teams
+//     onHit(vid, attackerId, amount),
+//     onDeath(vid, attackerId),
+//   }
+//   damager: {
+//     damage,      -- HP deducted per contact frame
+//     team,        -- string; friendly fire skipped
+//     knockback,   -- optional px/s horizontal impulse on target velocity
+//   }
+//
+// sysDamage(delta):
+//   AABB sweep between all damager / damageable pairs.
+//   Skips same-team or iframed targets.
+//   Grants iframes and fires callbacks on each hit.
+//   Ticks iframes down each call.
+//
+// Flicker globals (used by sysRender):
+//   IFRAME_FLICKER_INTERVAL, _iframeFlickerTimer, _iframeFlickerVisible
+// ================================================================
+
+const IFRAME_FLICKER_INTERVAL = 0.08;
+let _iframeFlickerTimer   = 0;
+let _iframeFlickerVisible = true;
+
+function sysDamage(delta) {
+  const damagerIds    = world.query('damager',    'transform');
+  const damageableIds = world.query('damageable', 'transform');
+
+  for (const aid of damagerIds) {
+    const dmgr = world.get(aid, 'damager');
+    const atf  = world.get(aid, 'transform');
+    const ax0  = atf.x + 1, ay0 = atf.y + 1;
+    const ax1  = atf.x + 7, ay1 = atf.y + 7;
+
+    for (const vid of damageableIds) {
+      if (vid === aid) continue;
+      const dmgable = world.get(vid, 'damageable');
+      if (!dmgable) continue;
+
+      // Team filter.
+      if (dmgr.team && dmgable.team && dmgr.team === dmgable.team) continue;
+
+      // Invincibility guard.
+      if (dmgable.iframes > 0) continue;
+
+      const vtf = world.get(vid, 'transform');
+      const bx0 = vtf.x + HBX, by0 = vtf.y + HBY;
+      const bx1 = bx0 + HBW,   by1 = by0 + HBH;
+
+      if (ax0 >= bx1 || ax1 <= bx0 || ay0 >= by1 || ay1 <= by0) continue;
+
+      // ── Hit confirmed ────────────────────────────────────────
+      dmgable.hp = Math.max(0, dmgable.hp - dmgr.damage);
+      dmgable.iframes = dmgable.iframeMax ?? 1.5;
+
+      if (dmgr.knockback) {
+        const vel = world.get(vid, 'velocity');
+        if (vel) vel.dx = (vtf.x >= atf.x ? 1 : -1) * dmgr.knockback;
+      }
+
+      if (dmgable.onHit)            dmgable.onHit(vid, aid, dmgr.damage);
+      if (dmgable.hp <= 0 && dmgable.onDeath) dmgable.onDeath(vid, aid);
+    }
+  }
+
+  // Tick iframes.
+  for (const vid of damageableIds) {
+    const d = world.get(vid, 'damageable');
+    if (d && d.iframes > 0) d.iframes = Math.max(0, d.iframes - delta);
+  }
 }
