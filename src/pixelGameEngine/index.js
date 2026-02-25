@@ -30,3 +30,4 @@ export * from './systems/animation.js';
 export * from './systems/particles.js';
 export * from './systems/gameLogic.js';
 export { hud } from './ui/hud.js';
+export { minimap } from './ui/minimap.js';
