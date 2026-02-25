@@ -1,6 +1,6 @@
 import { camera, worldState }  from '../world';
 import { world }               from '../systems/ecs';
-import { playerId }            from '../systems/gameLogic';
+import { playerId }            from '../systems/scene';
 import { paletteRGBA } from '../config';
 import { _fbSetPixel, fillRectPx } from '../renderer';
 

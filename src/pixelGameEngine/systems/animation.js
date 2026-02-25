@@ -1,3 +1,16 @@
+// Shared walk-animation helper. Sets the correct clip and flipX on
+// an animator given a movement direction vector (dx, dy).
+// Used by sysInput, sysAI, and the cutscene move command.
+export function _applyWalkAnim(anim, dx, dy) {
+  if (Math.abs(dy) > Math.abs(dx)) {
+    animatorPlay(anim, dy > 0 ? 'walk_down' : 'walk_up');
+    anim.flipX = false;
+  } else {
+    animatorPlay(anim, 'walk_side');
+    anim.flipX = dx < 0;
+  }
+}
+
 export function createAnimator(clips, initial = Object.keys(clips)[0]) {
   return { clips, current: initial, frameIdx: 0, timer: 0, flipX: false, flipY: false };
 }

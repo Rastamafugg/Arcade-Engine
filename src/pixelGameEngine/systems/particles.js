@@ -1,3 +1,7 @@
+import { camera } from '../systems/scene.js';
+import { paletteRGBA, blendPixel } from '../renderer.js';
+import { LOGICAL_W, LOGICAL_H, WORLD_OFFSET_Y } from '../config.js';
+
 const MAX_PARTICLES = 256;
 const _particles = Array.from({ length: MAX_PARTICLES }, () => ({
   active: false, x: 0, y: 0, vx: 0, vy: 0,
