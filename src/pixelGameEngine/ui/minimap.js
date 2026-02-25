@@ -1,6 +1,8 @@
-import { camera, world, worldState, playerId } from '../world.js';
-import { paletteRGBA } from '../config.js';
-import { _fbSetPixel, fillRectPx } from '../renderer.js';
+import { camera, worldState }  from '../world';
+import { world }               from '../systems/ecs';
+import { playerId }            from '../systems/gameLogic';
+import { paletteRGBA } from '../config';
+import { _fbSetPixel, fillRectPx } from '../renderer';
 
 // ================================================================
 // SECTION 25: MINIMAP

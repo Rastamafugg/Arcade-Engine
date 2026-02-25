@@ -1,6 +1,13 @@
-import { blitWorld } from "../renderer";
-import { _clampToWorld } from "../physics";
-import { resolveMove, collidesAt, spatialHash } from "../physics";
+import { _clampToWorld, collidesAt, resolveMove, spatialHash } from "../physics";
+import { TILE_SIZE, LOGICAL_W, LOGICAL_H, CHAR_W, CHAR_H } from '../config';
+import { ctx, spriteCache, fillRectPx, drawText, drawBox, blitWorld, textWidth } from '../renderer';
+import { camera, worldState }                     from '../world';
+import { world }                                  from './ecs';
+import { input }                                  from './input';
+import { sound }                                  from './sound';
+import { animatorPlay, animatorUpdate, animatorSprite, createAnimator } from './animation';
+import { emitBurst, emitParticle, updateParticles } from './particles';
+import { hud }                                    from '../ui/hud';
 
 let playerId = -1;
 
