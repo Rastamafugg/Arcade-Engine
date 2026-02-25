@@ -6,9 +6,9 @@ A self-contained vanilla JavaScript pixel-art game engine for 8×8 tile-based ga
 
 ```
 pixel-canvas-engine.js           Core engine library (v5.2)
-templates/
-  top-down-adventure.html        Zelda-style overworld demo with combat, items, and cutscenes
-  platformer.html                Side-scrolling platformer demo
+pixel-canvas-zelda.html          Zelda-style overworld demo with combat, items, and cutscenes
+pixel-canvas-platformer.html     Side-scrolling platformer demo
+
 ```
 
 ---
@@ -24,7 +24,7 @@ templates/
 </script>
 ```
 
-Both HTML templates in `templates/` demonstrate full integration patterns. The engine makes no assumptions about genre.
+Both HTML templates demonstrate full integration patterns. The engine makes no assumptions about genre.
 
 ---
 
@@ -54,10 +54,10 @@ Both HTML templates in `templates/` demonstrate full integration patterns. The e
 
 ## Templates
 
-### `top-down-adventure.html`
+### `pixel-canvas-zelda.html`
 Extended Zelda-style top-down game demonstrating the full enemy pipeline: patrol routes, aggro groups, ranged enemies, spawners, and LOS-gated alerting.
 
-### `platformer.html`
+### `pixel-canvas-platformer.html`
 Side-scrolling platformer. Gravity, one-way platforms, horizontal scroll camera, multi-character selection.
 
 ---
