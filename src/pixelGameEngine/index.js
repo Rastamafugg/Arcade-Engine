@@ -12,7 +12,7 @@ pixelGameEngine/
 │   ├── sound.js         # Web Audio engine
 │   ├── animation.js     # Sprite animation logic
 │   ├── particles.js     # Particle system
-│   └── gameLogic.js    # Scene manager, Dialog, Flags, and Cutscenes
+│   └── gameLogic.js     # Scene manager, Dialog, Flags, and Cutscenes
 └── ui/
     ├── hud.js           # HUD and Inventory
     └── minimap.js       # Minimap rendering
