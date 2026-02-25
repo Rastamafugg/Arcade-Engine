@@ -12,24 +12,16 @@ pixelGameEngine/
 │   ├── sound.js         # Web Audio engine
 │   ├── animation.js     # Sprite animation logic
 │   ├── particles.js     # Particle system
-│   ├── gameLogic.js     # Scene manager, Dialog, Flags, and Cutscenes
-│   ├── scene.js       # registerScenes, loadScene, clearSceneEntities,
-│   │                  # spawnSceneNpcs, spawnSceneChests, spawnSceneEnemies,
-│   │                  # startTransition, updateTransition, renderTransitionOverlay
-│   ├── dialog.js      # dialog state object, openDialog, renderDialog, sysDialog
-│   ├── flags.js       # flags, setFlag, clearFlag, getFlag, hasFlags, onFlags, _fireWatchers
-│   ├── cutscene.js    # cutscene IIFE, all cutscene commands
-│   ├── combat.js      # spawnAttack, sysDamage, sysProjectile, sysSwing,
-│   │                  # damageable iframe logic, _iframeFlickerVisible
-│   ├── enemy.js       # spawnEnemy, spawnRangedEnemy, sysEnemy,
-│   │                  # _enemyCanSeePlayer, _dist2, _toCardinal, _enemyClipsFromSprite,
-│   │                  # aggroTable, sysAggroTable, alertGroup, clearAggroGroup, aggroTableActive
-│   ├── spawner.js     # createSpawner, sysSpawner
-│   ├── chest.js       # _spawnChestEntity, _openChest, sysChestLoot
-│   └── gameLoop.js    # sysInput, sysAI, sysMovement, sysSpatialHash, sysCamera,
-│                      # sysAnimation, sysSceneTransition, sysRender,
-│                      # engineTick, _applyWalkAnim, saveLoad, setSaveKey,
-│                      # showNote, renderSaveNote, playerId, initPlayer
+│   ├── scene.js         # Scene manager
+│   ├── dialog.js        # Dialog
+│   ├── flags.js         # Flags
+│   ├── cutscene.js      # Cutscenes
+│   ├── combat.js        # Combat system
+│   ├── enemy.js         # Enemy and Ranged Enemy logic
+│   ├── spawner.js       # Spawner entities and logic
+│   ├── chest.js         # Chests and loot logic
+│   ├── saveLoad.js      # Save and Load system
+│   └── gameLoop.js      # Game Loop
 └── ui/
     ├── hud.js           # HUD and Inventory
     └── minimap.js       # Minimap rendering
