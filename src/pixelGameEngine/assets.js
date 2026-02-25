@@ -1,4 +1,4 @@
-import { paletteRGBA, TILE_SIZE } from './config.js';
+import { paletteRGBA } from './config.js';
 
 // ================================================================
 // 5×7 glyphs as 5-bit row masks. CHAR_W=6, CHAR_H=8 (includes gap).
@@ -78,7 +78,7 @@ export function buildSpriteCache(sprites) {
 }
 
 // Shared rasterization core. resolveIdx(i) → palette index or null.
-function _rasterizeBuf(resolveIdx) {
+export function _rasterizeBuf(resolveIdx) {
   const buf = new Uint8ClampedArray(64 * 4);
   for (let i = 0; i < 64; i++) {
     const idx  = resolveIdx(i);
@@ -90,7 +90,7 @@ function _rasterizeBuf(resolveIdx) {
   return buf;
 }
 
-function _rasterizeSprite(data) {
+export function _rasterizeSprite(data) {
   return _rasterizeBuf(i => data[i]);
 }
 

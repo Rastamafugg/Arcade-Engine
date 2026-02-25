@@ -1,4 +1,5 @@
 import { LOGICAL_W, LOGICAL_H, WORLD_OFFSET_Y, TILE_SIZE, paletteRGBA } from './config.js';
+import { FONT, CHAR_W, CHAR_H } from './assets.js';
 
 export const canvas = document.getElementById('screen');
 export const ctx    = canvas.getContext('2d');
@@ -48,6 +49,11 @@ export function fitToWindow() {
 window.addEventListener('resize', fitToWindow);
 fitToWindow();
 
+// World-space blit: always clips to world region (below HUD).
+export function blitWorld(buf, sx, sy, flipX = false, flipY = false) {
+  blitBuffer(buf, sx, sy, flipX, flipY, true);
+}
+
 export function fillRectPx(px, py, w, h, palIdx) {
   const [r, g, b] = paletteRGBA[palIdx];
   const x0 = Math.max(0, px), x1 = Math.min(LOGICAL_W, px + w);
@@ -80,7 +86,7 @@ export function blendPixel(sx, sy, r, g, b, alpha) {
 
 // Direct opaque pixel write into frameBuffer. Used by minimap and
 // other routines that bypass the alpha path for performance.
-function _fbSetPixel(bx, by, r, g, b) {
+export function _fbSetPixel(bx, by, r, g, b) {
   const base = (by * LOGICAL_W + bx) * 4;
   frameBuffer[base] = r; frameBuffer[base+1] = g;
   frameBuffer[base+2] = b; frameBuffer[base+3] = 255;

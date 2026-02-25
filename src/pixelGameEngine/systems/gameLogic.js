@@ -1,3 +1,7 @@
+import { blitWorld } from "../renderer";
+import { _clampToWorld } from "../physics";
+import { resolveMove, collidesAt, spatialHash } from "../physics";
+
 let playerId = -1;
 
 const sceneTransition = {
@@ -20,16 +24,16 @@ let _npcClipFactory = s => {
   };
 };
 
-function registerScenes(scenes) { _scenes = scenes; }
-function setNpcClipFactory(fn)  { _npcClipFactory = fn; }
+export function registerScenes(scenes) { _scenes = scenes; }
+export function setNpcClipFactory(fn)  { _npcClipFactory = fn; }
 
-function clearSceneEntities() {
+export function clearSceneEntities() {
   for (const id of [...world.allIds])
     if (!world.has(id, 'persistent')) world.destroyEntity(id);
   sceneNpcIds.length = 0;
 }
 
-function spawnSceneNpcs(scene) {
+export function spawnSceneNpcs(scene) {
   for (const def of (scene.npcs || [])) {
     const clips = _npcClipFactory(def.sprite);
     const id = world.createEntity({
@@ -51,7 +55,7 @@ function spawnSceneNpcs(scene) {
 
 // Spawn chests defined in scene config.
 // def: { tileX, tileY, loot: [{ type, sprite }], flagName }
-function spawnSceneChests(scene) {
+export function spawnSceneChests(scene) {
   for (const def of (scene.chests || [])) {
     if (def.flagName && getFlag(def.flagName)) continue; // already opened
     _spawnChestEntity(def.tileX * TILE_SIZE, def.tileY * TILE_SIZE,
@@ -59,7 +63,7 @@ function spawnSceneChests(scene) {
   }
 }
 
-function loadScene(name, px = null, py = null) {
+export function loadScene(name, px = null, py = null) {
   const scene = _scenes[name];
   if (!scene) { console.warn('Unknown scene:', name); return; }
   clearSceneEntities();
@@ -82,7 +86,7 @@ function loadScene(name, px = null, py = null) {
   scene.onEnter?.();
 }
 
-function startTransition(targetScene, targetX, targetY) {
+export function startTransition(targetScene, targetX, targetY) {
   if (sceneTransition.state !== 'none') return;
   sceneTransition.state = 'out'; sceneTransition.alpha = 0;
   sceneTransition.pendingScene = targetScene;
@@ -90,7 +94,7 @@ function startTransition(targetScene, targetX, targetY) {
   sound.playSFX('portal');
 }
 
-function updateTransition(delta) {
+export function updateTransition(delta) {
   const t = sceneTransition;
   if (t.state === 'none') return;
   if (t.state === 'out') {
@@ -106,7 +110,7 @@ function updateTransition(delta) {
   }
 }
 
-function renderTransitionOverlay() {
+export function renderTransitionOverlay() {
   if (sceneTransition.state === 'none' || sceneTransition.alpha <= 0) return;
   ctx.fillStyle = `rgba(0,0,0,${sceneTransition.alpha.toFixed(2)})`;
   ctx.fillRect(0, 0, LOGICAL_W, LOGICAL_H);
@@ -124,7 +128,7 @@ const dialog = {
   _branch:  null,
 };
 
-function renderDialog(elapsed) {
+export function renderDialog(elapsed) {
   if (!dialog.active) return;
   const bx = 8, by = LOGICAL_H - 54, bw = LOGICAL_W - 16, bh = 48;
   drawBox(bx, by, bw, bh, 1, 20);
@@ -144,12 +148,12 @@ function renderDialog(elapsed) {
 // SECTION 18: SAVE / LOAD
 // ================================================================
 let _saveKey = 'pixelCanvas_v5';
-function setSaveKey(k) { _saveKey = k; }
+export function setSaveKey(k) { _saveKey = k; }
 
 const saveNote = { text: '', timer: 0 };
-function showNote(msg, dur = 2.5) { saveNote.text = msg; saveNote.timer = dur; }
+export function showNote(msg, dur = 2.5) { saveNote.text = msg; saveNote.timer = dur; }
 
-function renderSaveNote() {
+export function renderSaveNote() {
   if (saveNote.timer <= 0) return;
   const x = ((LOGICAL_W - textWidth(saveNote.text)) / 2) | 0;
   fillRectPx(x - 3, 3, textWidth(saveNote.text) + 6, CHAR_H + 2, 1);
@@ -159,7 +163,7 @@ function renderSaveNote() {
 // Shared try/catch wrapper for localStorage operations.
 // fn() should return a truthy result on success, falsy on logical failure.
 // Returns false and logs on exception.
-function _tryStorage(fn, label) {
+export function _tryStorage(fn, label) {
   try { return fn(); }
   catch(e) { console.warn(label + ':', e.message); return false; }
 }
@@ -220,7 +224,7 @@ window.addEventListener('keydown', e => {
 // Shared walk-animation helper. Sets the correct clip and flipX on
 // an animator given a movement direction vector (dx, dy).
 // Used by sysInput, sysAI, and the cutscene move command.
-function _applyWalkAnim(anim, dx, dy) {
+export function _applyWalkAnim(anim, dx, dy) {
   if (Math.abs(dy) > Math.abs(dx)) {
     animatorPlay(anim, dy > 0 ? 'walk_down' : 'walk_up');
     anim.flipX = false;
@@ -230,7 +234,7 @@ function _applyWalkAnim(anim, dx, dy) {
   }
 }
 
-function sysInput() {
+export function sysInput() {
   if (dialog.active || sceneTransition.state !== 'none' || cutscene.isInputLocked()) {
     const vel = world.get(playerId, 'velocity');
     if (vel) { vel.dx = 0; vel.dy = 0; }
@@ -262,7 +266,7 @@ function sysInput() {
   }
 }
 
-function sysAI(delta) {
+export function sysAI(delta) {
   for (const id of world.query('transform', 'velocity', 'patrol', 'animator')) {
     if (world.has(id, '_scriptMove')) continue;
     const tf     = world.get(id, 'transform');
@@ -284,7 +288,7 @@ function sysAI(delta) {
   }
 }
 
-function sysMovement(delta) {
+export function sysMovement(delta) {
   for (const id of world.query('transform', 'velocity')) {
     const tf  = world.get(id, 'transform');
     const vel = world.get(id, 'velocity');
@@ -299,7 +303,7 @@ function sysMovement(delta) {
   }
 }
 
-function sysSpatialHash() {
+export function sysSpatialHash() {
   spatialHash.clear();
   for (const id of world.query('transform')) {
     const tf = world.get(id, 'transform');
@@ -307,18 +311,18 @@ function sysSpatialHash() {
   }
 }
 
-function sysCamera() {
+export function sysCamera() {
   const ptf = world.get(playerId, 'transform');
   if (ptf) camera.follow(ptf.x + TILE_SIZE/2, ptf.y + TILE_SIZE/2, worldState.w, worldState.h);
 }
 
-function sysAnimation(delta) {
+export function sysAnimation(delta) {
   for (const id of world.query('animator')) {
     animatorUpdate(world.get(id, 'animator'), delta);
   }
 }
 
-function sysSceneTransition() {
+export function sysSceneTransition() {
   if (sceneTransition.state !== 'none' || dialog.active || cutscene.isInputLocked()) return;
   const ptf = world.get(playerId, 'transform');
   if (!ptf) return;
@@ -334,7 +338,7 @@ function sysSceneTransition() {
   }
 }
 
-function sysDialog(elapsed) {
+export function sysDialog(elapsed) {
   if (dialog.active) {
     if (input.pressed('action') || input.pressed('cancel')) {
       if (dialog.page < dialog.lines.length - 1 && input.pressed('action')) {
@@ -394,7 +398,7 @@ function sysDialog(elapsed) {
 }
 
 // Entity render pass: world-space (clips below HUD).
-function sysRender() {
+export function sysRender() {
   for (const id of world.query('transform')) {
     const tf = world.get(id, 'transform');
     if (!camera.isVisible(tf.x, tf.y)) continue;
@@ -423,24 +427,24 @@ function sysRender() {
 const flags = {};
 const _watchers = [];
 
-function setFlag(name, val = true) {
+export function setFlag(name, val = true) {
   const prev = flags[name];
   flags[name] = !!val;
   if (val && !prev) _fireWatchers();
 }
 
-function clearFlag(name) { flags[name] = false; }
-function getFlag(name)   { return !!flags[name]; }
-function hasFlags(...names) { return names.every(n => !!flags[n]); }
+export function clearFlag(name) { flags[name] = false; }
+export function getFlag(name)   { return !!flags[name]; }
+export function hasFlags(...names) { return names.every(n => !!flags[n]); }
 
-function onFlags(flagNames, fn, { once = true } = {}) {
+export function onFlags(flagNames, fn, { once = true } = {}) {
   const w = { flagNames, fn, once, fired: false };
   _watchers.push(w);
   if (flagNames.every(n => flags[n])) { w.fired = true; fn(); }
   return w;
 }
 
-function _fireWatchers() {
+export function _fireWatchers() {
   for (const w of _watchers) {
     if (w.fired && w.once) continue;
     if (w.flagNames.every(n => flags[n])) {
@@ -450,7 +454,7 @@ function _fireWatchers() {
   }
 }
 
-function _resolveNpcDialog(npc) {
+export function _resolveNpcDialog(npc) {
   for (const b of (npc.dialogBranches ?? [])) {
     const reqOk = !b.requires || b.requires.every(f => flags[f]);
     const excOk = !b.excludes || !b.excludes.some(f => flags[f]);
@@ -459,7 +463,7 @@ function _resolveNpcDialog(npc) {
   return { lines: npc.dialogLines, branch: null };
 }
 
-function _applyDialogBranch(branch) {
+export function _applyDialogBranch(branch) {
   if (!branch) return;
   if (branch.setFlags)   branch.setFlags.forEach(f => setFlag(f));
   if (branch.clearFlags) branch.clearFlags.forEach(f => clearFlag(f));
@@ -472,7 +476,7 @@ function _applyDialogBranch(branch) {
 // ================================================================
 // SECTION 23: CUTSCENE / SCRIPT SYSTEM
 // ================================================================
-const cutscene = (() => {
+export const cutscene = (() => {
   let _queue    = [];
   let _running  = false;
   let _current  = null;
@@ -606,7 +610,7 @@ const cutscene = (() => {
 //   5. flagName is set if provided
 // ================================================================
 
-function _spawnChestEntity(wx, wy, loot, flagName) {
+export function _spawnChestEntity(wx, wy, loot, flagName) {
   return world.createEntity({
     transform: { x: wx, y: wy },
     sprite:    { name: '_chest_closed', flipX: false },
@@ -616,7 +620,7 @@ function _spawnChestEntity(wx, wy, loot, flagName) {
 }
 
 // Internal: open a chest by entity id.
-function _openChest(id) {
+export function _openChest(id) {
   const chest = world.get(id, 'chest');
   const tf    = world.get(id, 'transform');
   if (!chest || !tf || chest.opened) return;
@@ -658,7 +662,7 @@ function _openChest(id) {
 
 // Animates the loot pop-up entities spawned by _openChest.
 // Call this from the game loop. Loot entities fade out after ~0.6s.
-function sysChestLoot(delta) {
+export function sysChestLoot(delta) {
   for (const id of world.query('chestLoot', 'transform')) {
     const cl = world.get(id, 'chestLoot');
     const tf = world.get(id, 'transform');
@@ -673,7 +677,7 @@ function sysChestLoot(delta) {
 // SECTION 26: ENGINE TICK
 // Call once per frame with delta. Advances all internal subsystems.
 // ================================================================
-function engineTick(delta) {
+export function engineTick(delta) {
   if (saveNote.timer > 0) saveNote.timer -= delta;
   updateParticles(delta);
   cutscene.update(delta);
@@ -718,7 +722,7 @@ const IFRAME_FLICKER_INTERVAL = 0.08;
 let _iframeFlickerTimer   = 0;
 let _iframeFlickerVisible = true;
 
-function sysDamage(delta) {
+export function sysDamage(delta) {
   const damagerIds    = world.query('damager',    'transform');
   const damageableIds = world.query('damageable', 'transform');
 
@@ -812,7 +816,7 @@ function sysDamage(delta) {
 //   Ticks 'swing' entity lifetime. Destroys on expiry.
 // ================================================================
 
-function spawnAttack(ownerId, weapon, wx, wy, dirX, dirY) {
+export function spawnAttack(ownerId, weapon, wx, wy, dirX, dirY) {
   const cx = wx + TILE_SIZE / 2;
   const cy = wy + TILE_SIZE / 2;
   const team = weapon.team ?? 'player';
@@ -853,7 +857,7 @@ function spawnAttack(ownerId, weapon, wx, wy, dirX, dirY) {
 // Moves projectiles and destroys them on world-edge or solid-tile impact.
 // Damage on entity overlap is handled by sysDamage (which also destroys
 // non-piercing projectiles on first hit).
-function sysProjectile(delta) {
+export function sysProjectile(delta) {
   for (const id of world.query('projectile', 'transform')) {
     const proj = world.get(id, 'projectile');
     const tf   = world.get(id, 'transform');
@@ -879,7 +883,7 @@ function sysProjectile(delta) {
 }
 
 // Ticks melee swing lifetime; destroys on expiry.
-function sysSwing(delta) {
+export function sysSwing(delta) {
   for (const id of world.query('swing')) {
     const sw = world.get(id, 'swing');
     if (!sw) continue;
@@ -959,7 +963,7 @@ const _ENEMY_DEFAULT_WEAPON = {
 
 // Build a minimal five-clip animator from a single sprite name.
 // Used when spawnEnemy receives a string rather than a clips object.
-function _enemyClipsFromSprite(spriteName) {
+export function _enemyClipsFromSprite(spriteName) {
   const clip = dur => ({ frames: [spriteName], durations: dur });
   return {
     idle:      clip(0.5),
@@ -971,7 +975,7 @@ function _enemyClipsFromSprite(spriteName) {
 }
 
 // Euclidean distance squared between two points.
-function _dist2(ax, ay, bx, by) {
+export function _dist2(ax, ay, bx, by) {
   const dx = ax - bx, dy = ay - by;
   return dx * dx + dy * dy;
 }
@@ -979,7 +983,7 @@ function _dist2(ax, ay, bx, by) {
 // Snap a continuous direction vector to a single cardinal axis.
 // Returns [dirX, dirY] where each component is -1, 0, or 1 and
 // exactly one component is non-zero (dominant axis wins; X on tie).
-function _toCardinal(dx, dy) {
+export function _toCardinal(dx, dy) {
   if (dx === 0 && dy === 0) return [0, 1];  // default face-down
   return Math.abs(dx) >= Math.abs(dy)
     ? [(dx >= 0 ? 1 : -1), 0]
@@ -990,7 +994,7 @@ function _toCardinal(dx, dy) {
 // on the 'chase' transition so the player gets a visual cue.
 // Also writes an aggro-table entry so group-mates can join the chase
 // (see Section 32 for the full aggro system).
-function _enemyTransition(id, ai, newState) {
+export function _enemyTransition(id, ai, newState) {
   if (ai.state === newState) return;
   ai.state      = newState;
   ai.stateTimer = 0;
@@ -1010,7 +1014,7 @@ function _enemyTransition(id, ai, newState) {
 }
 
 // ── Factory ──────────────────────────────────────────────────────
-function spawnEnemy(def) {
+export function spawnEnemy(def) {
   const x    = def.x ?? 0;
   const y    = def.y ?? 0;
   const team = def.team ?? 'enemy';
@@ -1089,7 +1093,7 @@ function spawnEnemy(def) {
 // ptf may be null; returns false immediately in that case.
 // Both sides use sprite-center coords so wall-adjacency doesn't
 // produce false negatives in hasLineOfSight.
-function _enemyCanSeePlayer(ai, tf, ptf) {
+export function _enemyCanSeePlayer(ai, tf, ptf) {
   if (!ptf) return false;
   const ex = tf.x  + TILE_SIZE / 2;
   const ey = tf.y  + TILE_SIZE / 2;
@@ -1100,7 +1104,7 @@ function _enemyCanSeePlayer(ai, tf, ptf) {
   return !ai.useLOS || hasLineOfSight(ex, ey, px, py);
 }
 
-function sysEnemy(delta) {
+export function sysEnemy(delta) {
   const ptf = world.get(playerId, 'transform');  // null if player not spawned
 
   for (const id of world.query('enemyAI', 'transform', 'velocity', 'animator')) {
@@ -1363,7 +1367,7 @@ const _ENEMY_RANGED_WEAPON = {
   piercing:    false,
 };
 
-function spawnRangedEnemy(def) {
+export function spawnRangedEnemy(def) {
   const projSprite = def.projSprite ?? def.weapon?.projSprite ?? null;
   if (!projSprite) {
     console.warn('[spawnRangedEnemy] projSprite is required. Add def.projSprite or def.weapon.projSprite.');
@@ -1631,13 +1635,13 @@ const PRE_SPAWN_WARN = 0.4;   // seconds before spawn; set 0 to disable
 // ── Internal helpers ─────────────────────────────────────────────
 
 // Resolve the correct factory based on type string.
-function _spawnerFactory(type) {
+export function _spawnerFactory(type) {
   return type === 'ranged' ? spawnRangedEnemy : spawnEnemy;
 }
 
 // Translate tileX/tileY in a def to pixel coords. Returns a new
 // object so the stored def is never mutated.
-function _resolveSpawnerDef(def) {
+export function _resolveSpawnerDef(def) {
   if (def.tileX === undefined && def.tileY === undefined) return def;
   return {
     ...def,
@@ -1647,7 +1651,7 @@ function _resolveSpawnerDef(def) {
 }
 
 // Fire the pre-spawn warning burst at the spawn point.
-function _preSpawnEffect(def) {
+export function _preSpawnEffect(def) {
   const x = def.x ?? 0;
   const y = def.y ?? 0;
   emitBurst(x + 4, y + 4, 'portal');
@@ -1655,7 +1659,7 @@ function _preSpawnEffect(def) {
 }
 
 // ── Factory ──────────────────────────────────────────────────────
-function createSpawner(def, options = {}) {
+export function createSpawner(def, options = {}) {
   const type         = options.type         ?? 'melee';
   const flagName     = options.flagName     ?? null;
   const respawnDelay = options.respawnDelay ?? 8;
@@ -1688,7 +1692,7 @@ function createSpawner(def, options = {}) {
 // Reads scene.enemies and creates spawners for each entry.
 // Entries whose flagName is already true are skipped entirely —
 // no spawner entity is created, mirroring the chest pattern.
-function spawnSceneEnemies(scene) {
+export function spawnSceneEnemies(scene) {
   for (const def of (scene.enemies || [])) {
     if (def.flagName && getFlag(def.flagName)) continue;
     createSpawner(def, {
@@ -1700,7 +1704,7 @@ function spawnSceneEnemies(scene) {
 }
 
 // ── System ───────────────────────────────────────────────────────
-function sysSpawner(delta) {
+export function sysSpawner(delta) {
   for (const sid of world.query('spawner')) {
     const sp = world.get(sid, 'spawner');
     if (!sp) continue;
@@ -1837,7 +1841,7 @@ const aggroTable = new Map();
 
 // Write or refresh an alert entry. Called by _enemyTransition and
 // the public alertGroup() API.
-function _aggroTableAlert(groupName, alertX, alertY) {
+export function _aggroTableAlert(groupName, alertX, alertY) {
   const existing = aggroTable.get(groupName);
   if (existing) {
     // Refresh TTL; keep origin at the most recent alerter position.
@@ -1852,7 +1856,7 @@ function _aggroTableAlert(groupName, alertX, alertY) {
 // Check whether a given enemy (ai component + transform) should be
 // woken by a live group alarm. Returns false immediately if the
 // enemy has no aggroGroup or no alarm exists for the group.
-function _aggroTableTriggered(ai, tf) {
+export function _aggroTableTriggered(ai, tf) {
   if (!ai.aggroGroup) return false;
   const entry = aggroTable.get(ai.aggroGroup);
   if (!entry) return false;
@@ -1868,7 +1872,7 @@ function _aggroTableTriggered(ai, tf) {
 
 // Called from engineTick. Decays alerts whose group has no active
 // combatants. Deletes entries that reach zero.
-function sysAggroTable(delta) {
+export function sysAggroTable(delta) {
   if (!aggroTable.size) return;
 
   // Build a set of groups that have at least one enemy still in
@@ -1893,18 +1897,18 @@ function sysAggroTable(delta) {
 
 // Manually raise the alarm on a named group. Useful for scripted
 // triggers, traps, and cutscene events.
-function alertGroup(groupName, x = 0, y = 0) {
+export function alertGroup(groupName, x = 0, y = 0) {
   _aggroTableAlert(groupName, x, y);
 }
 
 // Immediately remove a group's alarm entry. Enemies already chasing
 // continue to chase; only idle/patrolling members are unaffected.
-function clearAggroGroup(groupName) {
+export function clearAggroGroup(groupName) {
   aggroTable.delete(groupName);
 }
 
 // Returns true if a live alarm entry exists for the group.
-function aggroTableActive(groupName) {
+export function aggroTableActive(groupName) {
   return aggroTable.has(groupName);
 }
 

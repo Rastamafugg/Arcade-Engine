@@ -1,3 +1,7 @@
+import { sound } from '../systems/sound.js';
+import { fillRectPx, blitBuffer, drawText, spriteCache } from '../renderer.js';
+import { HUD_H, LOGICAL_W } from '../config.js';
+
 const _HUD_DEFS = {
   _hud_heart_full: [
     null,27,27,null,null,27,27,null,

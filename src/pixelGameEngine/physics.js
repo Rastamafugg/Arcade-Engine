@@ -51,8 +51,10 @@ export function resolveMove(wx, wy, dx, dy) {
   return { x: ax, y: ay };
 }
 
+export function isGrounded(wx, wy) { return collidesAt(wx, wy + 1); }
+
 // Clamp world-space coordinates to valid entity positions.
-function _clampToWorld(x, y) {
+export function _clampToWorld(x, y) {
   return {
     x: Math.max(0, Math.min(worldState.w - TILE_SIZE, x)),
     y: Math.max(0, Math.min(worldState.h - TILE_SIZE, y)),
