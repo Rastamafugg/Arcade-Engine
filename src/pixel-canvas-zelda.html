@@ -480,6 +480,69 @@ const SPRITES = {
       22,null,null,22,22,null,null,22,
     null,null,null,null,null,null,null,null,
   ],
+  boss_p1_1: [
+    null, 4,  4,  4,  4,  4,  4,null,
+       4, 4,  7,  4,  4,  7,  4,  4,
+       4, 4,  4,  4,  4,  4,  4,  4,
+    null,20, 20, 20, 20, 20, 20,null,
+    null, 4, 20,  4,  4, 20,  4,null,
+    null, 4,  4,  4,  4,  4,  4,null,
+    null,20,  4,null,null,  4,20,null,
+       4,null,null,null,null,null,null,  4,
+  ],
+  // Phase 2 — ranged mage (purple robe, magenta eyes, ice-blue trim)
+  boss_p2_0: [
+    null,25, 25, 25, 25, 25, 25,null,
+      25,25, 19, 25, 25, 19, 25, 25,
+      25,25, 25, 25, 25, 25, 25, 25,
+    null,19, 25, 19, 19, 25, 19,null,
+      19,25, 18, 25, 25, 18, 25, 19,
+    null,25, 25, 25, 25, 25, 25,null,
+    null,25,null,null,null,null,25,null,
+    null,18,null,null,null,null,18,null,
+  ],
+  boss_p2_1: [
+    null,25, 25, 25, 25, 25, 25,null,
+      25,25, 19, 25, 25, 19, 25, 25,
+      25,19, 25, 25, 25, 25, 19, 25,
+    null,25, 19, 25, 25, 19, 25,null,
+    null,19, 25, 18, 18, 25, 19,null,
+    null,25, 25, 25, 25, 25, 25,null,
+    null,18, 25,null,null,25, 18,null,
+    null,null,18,null,null,18,null,null,
+  ],
+  // Phase 3 — void shadow (near-black, pale eyes, shimmering edges)
+  boss_p3_0: [
+    null,14, 14, 14, 14, 14, 14,null,
+      14,14, 20, 14, 14, 20, 14, 14,
+      14,14, 14, 14, 14, 14, 14, 14,
+    null,30, 14, 30, 30, 14, 30,null,
+      30,14, 20, 14, 14, 20, 14, 30,
+    null,14, 30, 14, 14, 30, 14,null,
+      20,null,14,null,null,14,null, 20,
+    null,null,null,null,null,null,null,null,
+  ],
+  boss_p3_1: [
+    null,14, 14, 14, 14, 14, 14,null,
+      14,14, 20, 14, 14, 20, 14, 14,
+      14,30, 14, 14, 14, 14, 30, 14,
+    null,14, 30, 14, 14, 30, 14,null,
+    null,30, 14, 20, 20, 14, 30,null,
+    null,14, 14, 14, 14, 14, 14,null,
+    null,20, 14,null,null,14, 20,null,
+    null,null,20,null,null,20,null,null,
+  ],
+  // Fireball projectile (phase 2)
+  fireball: [
+    null,null,null,null,null,null,null,null,
+    null,null, 7,  7,null,null,null,null,
+    null, 7, 27,  4, 27,  7,null,null,
+    null, 7,  4,  7,  4,  7,null,null,
+    null, 7, 27,  4, 27,  7,null,null,
+    null,null, 7,  7,null,null,null,null,
+    null,null,null,null,null,null,null,null,
+    null,null,null,null,null,null,null,null,
+  ],  
 };
 
 buildSpriteCache(SPRITES);
@@ -721,7 +784,7 @@ const ENEMY_DEFS = {
   },
 };
 
-function spawnEnemy(type, tileX, tileY) {
+function spawnEnemy(type, tileX, tileY, opts = {}) {
   const def = ENEMY_DEFS[type];
   if (!def) return;
   world.createEntity({
@@ -740,6 +803,7 @@ function spawnEnemy(type, tileX, tileY) {
       wanderDx:    Math.cos(Math.random() * Math.PI * 2),
       wanderDy:    Math.sin(Math.random() * Math.PI * 2),
       drop:        def.drop,
+      aggroGroup:  opts.aggroGroup ?? null,
     },
     damageable: {
       hp: def.hp, maxHp: def.maxHp,
@@ -773,6 +837,16 @@ function sysEnemyAI(delta) {
   const ptf = world.get(getPlayerId(), 'transform');
   if (!ptf) return;
 
+  // Pass 1 — collect which aggro groups have at least one member in range.
+  const _alertedGroups = new Set();
+  for (const id of world.query('enemy', 'transform')) {
+    const tf = world.get(id, 'transform');
+    const e  = world.get(id, 'enemy');
+    if (!tf || !e || !e.aggroGroup) continue;
+    const dx = ptf.x - tf.x, dy = ptf.y - tf.y;
+    if (Math.sqrt(dx*dx + dy*dy) < e.aggroRange) _alertedGroups.add(e.aggroGroup);
+  }
+
   for (const id of world.query('enemy', 'transform', 'velocity')) {
     const tf  = world.get(id, 'transform');
     const vel = world.get(id, 'velocity');
@@ -791,7 +865,10 @@ function sysEnemyAI(delta) {
     const dy   = ptf.y - tf.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
 
-    if (dist < e.aggroRange && dist > 2) {
+    const inRange   = dist < e.aggroRange;
+    const groupAlert = e.aggroGroup && _alertedGroups.has(e.aggroGroup);
+
+    if ((inRange || groupAlert) && dist > 2) {
       // Chase player
       vel.dx = (dx / dist) * e.speed;
       vel.dy = (dy / dist) * e.speed;
@@ -1098,6 +1175,48 @@ function buildCaveL3(cols, rows) {
 
   // Stairs up to cave B2
   obj[15][17] = 'stairs_up';
+  obj[2][2]   = 'stairs_down';
+
+  return { bg, objects: obj, collision: col };
+}
+
+function buildCaveL4(cols, rows) {
+  const bg  = Array.from({length: rows}, (_, r) =>
+    Array.from({length: cols}, (_, c) =>
+      (r === 0 || r === rows-1 || c === 0 || c === cols-1) ? 'cave_wall' : 'cave_floor_b3'));
+  const obj = Array.from({length: rows}, () => Array(cols).fill(null));
+  const col = Array.from({length: rows}, (_, r) =>
+    Array.from({length: cols}, (_, c) =>
+      r === 0 || r === rows-1 || c === 0 || c === cols-1));
+
+  // Boss arena — central sealed chamber with four doorways
+  for (let r = 4; r <= 13; r++) {
+    bg[r][4]  = 'cave_wall'; col[r][4]  = true;
+    bg[r][15] = 'cave_wall'; col[r][15] = true;
+  }
+  for (let c = 4; c <= 15; c++) {
+    bg[4][c]  = 'cave_wall'; col[4][c]  = true;
+    bg[13][c] = 'cave_wall'; col[13][c] = true;
+  }
+  // Doorways — north/south/west/east openings (one tile wide)
+  col[4][9]  = false; bg[4][9]  = 'cave_floor_b3';
+  col[13][9] = false; bg[13][9] = 'cave_floor_b3';
+  col[8][4]  = false; bg[8][4]  = 'cave_floor_b3';
+  col[8][15] = false; bg[8][15] = 'cave_floor_b3';
+
+  // Crystal pillars decorating the antechamber
+  [[2,3],[2,9],[2,16],[15,3],[15,9],[15,16],[6,1],[6,18],[11,1],[11,18]].forEach(([r,c]) => {
+    if (r > 0 && r < rows-1 && c > 0 && c < cols-1 && !col[r][c]) obj[r][c] = 'crystal';
+  });
+
+  // Boss throne marker (crystal at boss spawn point)
+  obj[8][9] = 'crystal';
+
+  // Stairs up to B3 (south-west antechamber)
+  obj[15][3] = 'stairs_up';
+
+  // Locked exit portal (north-east antechamber — guarded until boss dies)
+  obj[2][16] = 'portal';
 
   return { bg, objects: obj, collision: col };
 }
@@ -1112,6 +1231,230 @@ const { bg: owBg,  objects: owObj,  collision: owCol  } = buildOverworld(OW_COLS
 const { bg: c1Bg,  objects: c1Obj,  collision: c1Col  } = buildCaveL1(CAVE_COLS, CAVE_ROWS);
 const { bg: c2Bg,  objects: c2Obj,  collision: c2Col  } = buildCaveL2(CAVE_COLS, CAVE_ROWS);
 const { bg: c3Bg,  objects: c3Obj,  collision: c3Col  } = buildCaveL3(CAVE_COLS, CAVE_ROWS);
+const { bg: c4Bg,  objects: c4Obj,  collision: c4Col  } = buildCaveL4(CAVE_COLS, CAVE_ROWS);
+
+// ================================================================
+// BOSS — THE VOID HERALD (cave_b4)
+// Three-phase fight. Uses engine's spawnEnemy (enemyAI component)
+// so sysEnemy + sysSpawner must run in the game loop (added above).
+// ================================================================
+let _bossId    = -1;
+let _bossPhase =  0;   // 0 = not yet spawned, 1/2/3 = active phase
+let _b4SpawnersAlive = [];   // track phase-3 minion spawners
+
+function _bossClips(phase) {
+  const f0 = `boss_p${phase}_0`, f1 = `boss_p${phase}_1`;
+  return {
+    idle:      { frames: [f0, f1], durations: 0.5  },
+    walk_down: { frames: [f0, f1], durations: 0.2  },
+    walk_up:   { frames: [f0, f1], durations: 0.2  },
+    walk_side: { frames: [f0, f1], durations: 0.2  },
+    attack:    { frames: [f1, f0], durations: 0.12 },
+  };
+}
+
+function _bossEnterPhase2(vid) {
+  const ai  = world.get(vid, 'enemyAI');
+  const dmg = world.get(vid, 'damageable');
+  const anim = world.get(vid, 'animator');
+  if (!ai || !dmg) return;
+
+  // Swap to ranged configuration
+  ai.weapon = {
+    type:        'ranged',
+    projSprite:  'fireball',
+    projSpeed:   70,
+    projLife:    2.0,
+    damage:      2,
+    cooldownMax: 1.6,
+    knockback:   25,
+    team:        'boss',
+  };
+  ai.kiteRange   = 36;
+  ai.attackRange = 64;
+  ai.speed       = 18;
+  if (anim) { Object.assign(anim, _bossClips(2)); animatorPlay(anim, 'idle'); }
+  dmg.iframeMax  = 0.5;
+
+  const tf = world.get(vid, 'transform');
+  if (tf) emitBurst(tf.x + 4, tf.y + 4, 'levelup');
+  sound.playSFX('alert');
+
+  cutscene.run([
+    { cmd: 'lockInput', value: true },
+    { cmd: 'sfx',   name: 'alert' },
+    { cmd: 'dialog', name: 'VOID HERALD',
+      lines: ['FLESH MEANS NOTHING!', 'FEEL THE ARCANE STORM!'] },
+    { cmd: 'lockInput', value: false },
+  ]);
+}
+
+function _bossEnterPhase3(vid) {
+  const ai  = world.get(vid, 'enemyAI');
+  const dmg = world.get(vid, 'damageable');
+  const anim = world.get(vid, 'animator');
+  if (!ai || !dmg) return;
+
+  // Back to slow melee but spawns minions continuously
+  ai.weapon = {
+    type:        'melee',
+    damage:      3,
+    cooldownMax: 0.9,
+    knockback:   60,
+    swingW: 14, swingH: 12, swingLife: 0.14,
+    team: 'boss',
+  };
+  ai.kiteRange   = 0;
+  ai.attackRange = 14;
+  ai.speed       = 20;
+  if (anim) { Object.assign(anim, _bossClips(3)); animatorPlay(anim, 'idle'); }
+  dmg.iframeMax = 0.35;
+
+  const tf = world.get(vid, 'transform');
+  if (tf) emitBurst(tf.x + 4, tf.y + 4, 'hit');
+  sound.playSFX('alert');
+
+  cutscene.run([
+    { cmd: 'lockInput', value: true },
+    { cmd: 'sfx',   name: 'alert' },
+    { cmd: 'dialog', name: 'VOID HERALD',
+      lines: ['I AM THE DARKNESS ITSELF!', 'MY CHILDREN WILL DEVOUR YOU!'] },
+    { cmd: 'lockInput', value: false },
+  ]);
+
+  // Spawn three minion spawners in the arena corners (10-s respawn each)
+  _b4SpawnersAlive = [];
+  const minionPositions = [[6,6],[6,12],[11,6],[11,12]];
+  for (const [ty, tx] of minionPositions) {
+    const sid = createSpawner({
+      tileX: tx, tileY: ty,
+      sprite: {
+        idle:      { frames: ['skel_0','skel_1'], durations: 0.4 },
+        walk_down: { frames: ['skel_0','skel_1'], durations: 0.22 },
+        walk_up:   { frames: ['skel_0','skel_1'], durations: 0.22 },
+        walk_side: { frames: ['skel_0','skel_1'], durations: 0.22 },
+      },
+      hp: 3, speed: 30,
+      alertRange: 999, attackRange: 14, leashRange: 999,
+      useLOS: false,
+      aggroGroup: 'b4_minions',
+      weapon: { damage: 1, knockback: 30, cooldownMax: 1.0 },
+      onDeath(vid2) {
+        const t2 = world.get(vid2, 'transform');
+        if (t2) emitBurst(t2.x + 4, t2.y + 4, 'hit');
+        sound.playSFX('enemy_die');
+      },
+    }, { respawnDelay: 10 });
+    _b4SpawnersAlive.push(sid);
+  }
+}
+
+function _bossVictory(vid) {
+  // Destroy all minion spawners
+  for (const sid of _b4SpawnersAlive) {
+    if (world.has(sid, 'spawner')) world.destroyEntity(sid);
+  }
+  _b4SpawnersAlive = [];
+
+  // Destroy all remaining minion enemies
+  for (const eid of world.query('enemyAI')) {
+    if (eid !== vid) world.destroyEntity(eid);
+  }
+
+  const tf = world.get(vid, 'transform');
+  const px = tf ? tf.x + 4 : 9 * TILE_SIZE;
+  const py = tf ? tf.y + 4 : 8 * TILE_SIZE;
+
+  setFlag('boss_b4_dead');
+  _bossPhase = 0;
+
+  cutscene.run([
+    { cmd: 'lockInput', value: true },
+    { cmd: 'stopBgm' },
+    { cmd: 'sfx',   name: 'enemy_die' },
+    { cmd: 'emit',  x: px, y: py, preset: 'levelup' },
+    { cmd: 'wait',  seconds: 0.4 },
+    { cmd: 'emit',  x: px - 8, y: py - 4, preset: 'levelup' },
+    { cmd: 'emit',  x: px + 8, y: py - 4, preset: 'levelup' },
+    { cmd: 'wait',  seconds: 0.5 },
+    { cmd: 'dialog', name: 'VOID HERALD',
+      lines: ['...THE VOID... RECLAIMS ME...', 'YOU CANNOT... STOP WHAT COMES...'] },
+    { cmd: 'wait',  seconds: 0.3 },
+    { cmd: 'emit',  x: px, y: py, preset: 'chest' },
+    { cmd: 'bgm',   name: 'overworld' },
+    { cmd: 'dialog', name: 'SYSTEM',
+      lines: ['THE VOID HERALD IS VANQUISHED!', 'PEACE RETURNS TO THE DEEP.'] },
+    { cmd: 'call',  fn() {
+        hud.addCoins(20);
+        hud.setMaxHp(hud.maxHp + 4);
+        hud.addHp(4);
+        showNote('BOSS DEFEATED! +20 COINS  +4 MAX HP');
+      }},
+    { cmd: 'note',  text: 'THE CAVE DOOR IS NOW OPEN.' },
+    { cmd: 'lockInput', value: false },
+  ]);
+}
+
+function spawnBoss() {
+  _bossPhase = 1;
+  _bossId = Engine.spawnEnemy({
+    x: 9 * TILE_SIZE, y: 8 * TILE_SIZE,
+    sprite:      _bossClips(1),
+    hp:          24, maxHp: 24,
+    speed:       26,
+    alertRange:  999,
+    attackRange: 14,
+    leashRange:  999,
+    useLOS:      false,
+    team:        'boss',
+    aggroGroup:  'cave_b4_boss',
+    iframeMax:   0.65,
+    weapon: {
+      type:        'melee',
+      damage:      2,
+      cooldownMax: 1.1,
+      knockback:   50,
+      swingW: 12, swingH: 10, swingLife: 0.13,
+      team: 'boss',
+    },
+
+    onHit(vid, _aid, _amount) {
+      const dmg = world.get(vid, 'damageable');
+      if (!dmg) return;
+
+      if (_bossPhase === 1 && dmg.hp <= 16) {   // ≤ 66 % → phase 2
+        _bossPhase = 2;
+        _bossEnterPhase2(vid);
+      } else if (_bossPhase === 2 && dmg.hp <= 8) {  // ≤ 33 % → phase 3
+        _bossPhase = 3;
+        _bossEnterPhase3(vid);
+      }
+    },
+
+    onDeath(vid) {
+      _bossVictory(vid);
+    },
+  });
+}
+
+function _buildBossIntroCutscene() {
+  return [
+    { cmd: 'lockInput', value: true },
+    { cmd: 'bgm',   name: 'cave_deep' },
+    { cmd: 'wait',  seconds: 0.5 },
+    { cmd: 'dialog', name: 'VOID HERALD',
+      lines: [
+        'SO... A MORTAL DARES\nENTER MY SANCTUM.',
+        'THE DARKNESS YOU SEEK\nIS ME.',
+        'TURN BACK AND YOUR DEATH\nWILL BE SWIFT.',
+        'STAY... AND SUFFER.',
+      ]},
+    { cmd: 'wait',  seconds: 0.3 },
+    { cmd: 'call',  fn() { spawnBoss(); } },
+    { cmd: 'sfx',   name: 'alert' },
+    { cmd: 'lockInput', value: false },
+  ];
+}
 
 // ================================================================
 // SCENES
@@ -1123,7 +1466,10 @@ const SCENE_DATA = {
     music: 'overworld',
     layerBG: owBg, layerObjects: owObj, layerCollision: owCol,
     portals: [
-      { tileX: 35, tileY: 8, targetScene: 'cave', targetTileX: 3, targetTileY: 8 },
+      { tileX: 16, tileY: 15, targetScene: 'cave_b2', targetTileX: 16, targetTileY: 2,
+        onActivate() { sound.playSFX('stairs'); showNote('ASCENDING TO B2...'); } },
+      { tileX: 2, tileY: 2, targetScene: 'cave_b4', targetTileX: 3, targetTileY: 14,
+        onActivate() { sound.playSFX('stairs'); showNote('DESCENDING TO B4...'); } },
     ],
     chests: [
       // Original chests
@@ -1388,11 +1734,11 @@ const SCENE_DATA = {
       spawnPickupFlagged(14*8, 3*8, 'coin',  'coinB2b');
       spawnPickupFlagged( 2*8, 8*8, 'heart', 'heartB2');
 
-      // Spawn bats — faster, more aggressive
-      spawnEnemy('bat',  5,  3);
-      spawnEnemy('bat', 14,  8);
-      spawnEnemy('bat',  8, 14);
-      spawnEnemy('bat', 16,  3);
+      // Spawn bats — faster, more aggressive; share aggro group
+      spawnEnemy('bat',  5,  3, { aggroGroup: 'cave_b2_bats' });
+      spawnEnemy('bat', 14,  8, { aggroGroup: 'cave_b2_bats' });
+      spawnEnemy('bat',  8, 14, { aggroGroup: 'cave_b2_bats' });
+      spawnEnemy('bat', 16,  3, { aggroGroup: 'cave_b2_bats' });
 
       if (!getFlag('sawB2Warning')) {
         setFlag('sawB2Warning');
@@ -1445,16 +1791,110 @@ const SCENE_DATA = {
       spawnPickupFlagged(17*8,  2*8, 'coin',  'coinB3b');
       spawnPickupFlagged( 2*8, 16*8, 'coin',  'coinB3c');
 
-      // Spawn skeletons — slow, tanky, high damage
-      spawnEnemy('skeleton',  2,  3);
-      spawnEnemy('skeleton', 17,  3);
-      spawnEnemy('skeleton',  2, 12);
-      spawnEnemy('skeleton', 10,  3);
-      spawnEnemy('skeleton', 10, 13);  // guards the treasure
+      // Skeleton spawner — one skeleton every 10 seconds, always respawns.
+      createSpawner({
+        tileX: 9, tileY: 8,
+        sprite: {
+          idle:      { frames: ['skel_0', 'skel_1'], durations: 0.45 },
+          walk_down: { frames: ['skel_0', 'skel_1'], durations: 0.25 },
+          walk_up:   { frames: ['skel_0', 'skel_1'], durations: 0.25 },
+          walk_side: { frames: ['skel_0', 'skel_1'], durations: 0.25 },
+        },
+        hp: 5, speed: 22,
+        alertRange: 80, attackRange: 14, leashRange: 130,
+        weapon: { damage: 2, knockback: 55, cooldownMax: 1.4 },
+        aggroGroup: 'cave_b3_spawner',
+        useLOS: false,
+        onDeath(vid) {
+          const tf = world.get(vid, 'transform');
+          if (tf) {
+            world.createEntity({
+              transform: { x: tf.x, y: tf.y },
+              sprite:    { name: 'heart_item', flipX: false },
+              pickup:    { type: 'heart', collected: false },
+            });
+          }
+          sound.playSFX('enemy_die');
+        },
+      }, { respawnDelay: 10 });
+
+      // Add downward stairs portal object (visual only — actual portal defined below)
+      // (The portal entry in cave_b3's `portals` array handles the transition)
 
       if (!getFlag('sawB3Warning')) {
         setFlag('sawB3Warning');
-        showNote('B3 — THE DEEP. SKELETONS GUARD\nANCIENT TREASURE.', 3.5);
+        showNote('B3 — THE DEEP. A SPAWNER STIRS\nIN THE SHADOWS.', 3.5);
+      }
+    },
+  }))(),
+
+  // ---- Cave Level 4 — Boss Floor ----
+  cave_b4: (() => ({
+    worldCols: CAVE_COLS, worldRows: CAVE_ROWS, bgColor: 14,
+    playerStart: { tileX: 3, tileY: 14 },
+    music: 'cave_deep',
+    layerBG: c4Bg, layerObjects: c4Obj, layerCollision: c4Col,
+    portals: [
+      // Stairs back up to B3
+      { tileX: 3, tileY: 15, targetScene: 'cave_b3', targetTileX: 2, targetTileY: 3,
+        onActivate() { sound.playSFX('stairs'); showNote('ASCENDING TO B3...'); } },
+      // Exit portal (locked until boss is dead)
+      {
+        tileX: 16, tileY: 2,
+        script: [
+          { cmd: 'call', fn() {
+              if (!getFlag('boss_b4_dead')) {
+                cutscene.run([
+                  { cmd: 'dialog', name: 'SEALED DOOR',
+                    lines: ['THE VOID SEALS THIS PASSAGE.', 'DEFEAT THE HERALD FIRST.'] },
+                ]);
+              } else {
+                // Transition back to overworld as a reward
+                sceneTransition('overworld', 35 * TILE_SIZE, 8 * TILE_SIZE);
+              }
+            }},
+        ],
+      },
+    ],
+    chests: [
+      // Loot chest — only accessible after boss is dead
+      {
+        tileX: 9, tileY: 8, flagName: 'chest_b4_loot',
+        loot: [
+          {
+            sprite: 'coin_item',
+            label: 'VOID GOLD! +15 COINS',
+            onPickup() {
+              hud.addCoins(15);
+              sound.playSFX('coin');
+              emitBurst(9*8+4, 8*8+4, 'coin');
+              showNote('+15 VOID COINS!');
+            },
+          },
+        ],
+      },
+    ],
+    npcs: [],
+    onEnter() {
+      spawnPickupFlagged( 2*8,  2*8, 'coin', 'coinB4a');
+      spawnPickupFlagged(17*8,  2*8, 'coin', 'coinB4b');
+      spawnPickupFlagged( 2*8, 16*8, 'heart','heartB4');
+
+      // Reset phase state on every entry so re-visiting the floor works
+      _bossPhase = 0;
+      _bossId    = -1;
+
+      if (!getFlag('boss_b4_dead')) {
+        if (!getFlag('sawB4Intro')) {
+          setFlag('sawB4Intro');
+          // First visit — play boss intro cutscene, which spawns the boss
+          setTimeout(() => cutscene.run(_buildBossIntroCutscene()), 80);
+        } else {
+          // Return visit — spawn boss immediately (no intro)
+          spawnBoss();
+        }
+      } else {
+        showNote('THE HERALD IS VANQUISHED.\nPEACE LINGERS HERE.');
       }
     },
   }))(),
@@ -1570,6 +2010,7 @@ function loop(ts) {
   sysPlayerAttack(delta);
   sysAI(delta);
   sysEnemyAI(delta);
+  sysEnemy(delta);       // engine AI for spawner-created enemies (B3/B4)
   sysMovement(delta);
   sysSpatialHash();
   sysCamera();
@@ -1577,6 +2018,7 @@ function loop(ts) {
   sysAnimation(delta);
   sysDialog(elapsed);
   sysDamage(delta);
+  sysSpawner(delta);     // manage B3 skeleton spawner and B4 boss spawner
   sysProjectile(delta);
   sysSwing(delta);
   sysPickups();
