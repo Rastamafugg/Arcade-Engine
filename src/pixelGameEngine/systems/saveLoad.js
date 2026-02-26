@@ -1,3 +1,14 @@
+import { loadScene } from './scene.js';
+import { worldState } from '../world.js';
+import { world } from './ecs.js';
+import { flags } from './flags.js';
+import { hud } from '../ui/hud.js';
+import { sound } from './sound.js';
+import { textWidth, fillRectPx, drawText } from '../renderer.js';
+import { LOGICAL_W } from '../config.js';
+import { CHAR_H } from '../assets.js';
+import { getPlayerId, getScenes } from './scene.js';
+
 // ================================================================
 // SECTION 18: SAVE / LOAD
 // ================================================================
@@ -24,7 +35,7 @@ export function _tryStorage(fn, label) {
 
 export const saveLoad = {
   save() {
-    const ptf = world.get(playerId, 'transform');
+    const ptf = world.get(getPlayerId, 'transform');
     if (!ptf) return false;
     return _tryStorage(() => {
       localStorage.setItem(_saveKey, JSON.stringify({
@@ -42,7 +53,7 @@ export const saveLoad = {
       const raw  = localStorage.getItem(_saveKey);
       if (!raw) return false;
       const data = JSON.parse(raw);
-      if (data.version !== 2 || !_scenes[data.scene]) return false;
+      if (data.version !== 2 || !getScenes[data.scene]) return false;
       if (data.flags) Object.assign(flags, data.flags);
       if (data.hud) {
         hud.hp     = data.hud.hp    ?? hud.hp;

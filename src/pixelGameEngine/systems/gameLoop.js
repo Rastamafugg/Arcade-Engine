@@ -10,7 +10,7 @@ import { updateParticles } from './particles.js';
 import { _clampToWorld, resolveMove, spatialHash } from '../physics.js';
 import { blitWorld } from '../renderer.js';
 import { saveNote } from './saveLoad.js';
-import { getPlayerId, sceneTransition, _scenes } from './scene.js';
+import { getPlayerId, sceneTransition, getScenes } from './scene.js';
 import { camera } from '../world.js';
 import { hud } from '../ui/hud.js';
 
@@ -112,7 +112,7 @@ export function sysSceneTransition() {
   if (!ptf) return;
   const tx = ptf.x / TILE_SIZE | 0;
   const ty = ptf.y / TILE_SIZE | 0;
-  const portals = _scenes[worldState.currentScene]?.portals ?? [];
+  const portals = getScenes[worldState.currentScene]?.portals ?? [];
   for (const p of portals) {
     if (tx === p.tileX && ty === p.tileY) {
       if (p.script) { cutscene.run(p.script); return; }

@@ -3,6 +3,7 @@ import { TILE_SIZE } from '../config.js';
 import { createAnimator } from './animation.js';
 import { hasLineOfSight } from '../physics.js';
 import { emitBurst } from './particles.js';
+import { getPlayerId } from './scene.js';
 
 // ================================================================
 // SECTION 29: ENEMY AI SYSTEM
@@ -217,7 +218,7 @@ export function _enemyCanSeePlayer(ai, tf, ptf) {
 }
 
 export function sysEnemy(delta) {
-  const ptf = world.get(playerId, 'transform');  // null if player not spawned
+  const ptf = world.get(getPlayerId(), 'transform');  // null if player not spawned
 
   for (const id of world.query('enemyAI', 'transform', 'velocity', 'animator')) {
     const ai   = world.get(id, 'enemyAI');

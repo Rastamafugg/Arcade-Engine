@@ -9,8 +9,8 @@ import { TILE_SIZE } from '../config.js';
 import { camera } from '../world.js';
 
 let playerId = -1;
+let _scenes = {};
 const sceneNpcIds = [];
-export let _scenes = {};
 
 // Default NPC clip factory. Override with setNpcClipFactory().
 let _npcClipFactory = s => {
@@ -29,6 +29,7 @@ export const sceneTransition = {
   pendingScene: '', pendingX: 0, pendingY: 0,
 };
 
+export function getScenes() { return _scenes; }
 export function registerScenes(scenes) { _scenes = scenes; }
 export function setNpcClipFactory(fn)  { _npcClipFactory = fn; }
 

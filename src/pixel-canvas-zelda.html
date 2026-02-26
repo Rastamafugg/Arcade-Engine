@@ -83,7 +83,7 @@ const {
   // Transition
   renderTransitionOverlay,
   // Scene exports (re-exported from scene.js)
-  _scenes, sceneTransition,
+  getScenes, sceneTransition,
 } = Engine;
 
 'use strict';
@@ -846,7 +846,7 @@ function sysPortalSparkles(delta) {
   _portalTimer += delta;
   if (_portalTimer < 0.12) return;
   _portalTimer = 0;
-  const portals = _scenes[worldState.currentScene]?.portals ?? [];
+  const portals = getScenes()[worldState.currentScene]?.portals ?? [];
   for (const p of portals) {
     emitBurst(p.tileX * TILE_SIZE + 4, p.tileY * TILE_SIZE + 4, 'sparkle');
   }
@@ -1586,7 +1586,7 @@ function loop(ts) {
   sysPortalSparkles(delta);
 
   // Render
-  clearBuffer(_scenes[worldState.currentScene]?.bgColor ?? 0);
+  clearBuffer(getScenes()[worldState.currentScene]?.bgColor ?? 0);
   drawTilemap(worldState.layerBG,      elapsed);
   drawTilemap(worldState.layerObjects, elapsed);
   sysRender();
