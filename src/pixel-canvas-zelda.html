@@ -64,7 +64,7 @@ const {
   // Cutscene
   cutscene,
   // Combat
-  sysSwing, sysProjectile, sysDamage,
+  sysSwing, sysProjectile, sysDamage, spawnAttack,
   // Enemy
   sysEnemy, spawnRangedEnemy,
   // Spawner
@@ -1485,7 +1485,7 @@ hud.setCoins(0);
 // ================================================================
 // PLAYER ENTITY
 // ================================================================
-let pid = world.createEntity({
+setPlayerId(world.createEntity({
   persistent: true,
   player:     true,
   transform:  { x: 15 * TILE_SIZE, y: 15 * TILE_SIZE },
@@ -1512,7 +1512,7 @@ let pid = world.createEntity({
     },
     onDeath() { /* handled in onHit */ },
   },
-});
+}));
 
 registerAllItemUseHandlers();
 

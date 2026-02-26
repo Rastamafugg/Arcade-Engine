@@ -2,7 +2,7 @@ import { world } from './ecs.js';
 import { dialog } from './dialog.js';
 import { sound } from './sound.js';
 import { emitBurst } from './particles.js';
-import { _applyWalkAnim } from './animation.js';
+import { _applyWalkAnim, animatorPlay } from './animation.js';
 import { TILE_SIZE } from '../config.js';
 import { hud } from '../ui/hud.js';
 import { setFlag } from './flags.js';

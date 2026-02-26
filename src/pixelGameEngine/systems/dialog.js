@@ -8,7 +8,7 @@ import { cutscene } from './cutscene.js';
 import { fillRectPx } from '../renderer.js';
 import { TILE_SIZE, LOGICAL_W, LOGICAL_H } from '../config.js';
 import { _openChest } from './chest.js';
-import { getFlags } from './flags.js';
+import { getFlags, setFlag } from './flags.js';
 import { hud } from '../ui/hud.js';
 import { CHAR_W } from '../assets.js';
 

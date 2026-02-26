@@ -7,6 +7,8 @@ import { _spawnChestEntity } from './chest.js';
 import { spawnSceneEnemies } from './spawner.js';
 import { TILE_SIZE } from '../config.js';
 import { camera } from '../world.js';
+import { ctx } from '../renderer.js';
+import { LOGICAL_H, LOGICAL_W } from '../config.js';
 
 let playerId = -1;
 let _scenes = {};

@@ -3,6 +3,7 @@ import { TILE_SIZE } from '../config.js';
 import { collidesAt } from '../physics.js';
 import { _fbSetPixel } from '../renderer.js';
 import { HBX, HBY, HBW, HBH } from '../physics.js';
+import { worldState } from '../world.js';
 
 // ================================================================
 // SECTION 27: DAMAGE SYSTEM

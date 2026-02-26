@@ -10,8 +10,8 @@ import { updateParticles } from './particles.js';
 import { _clampToWorld, resolveMove, spatialHash } from '../physics.js';
 import { blitWorld } from '../renderer.js';
 import { saveNote } from './saveLoad.js';
-import { getPlayerId, sceneTransition, getScenes } from './scene.js';
-import { camera } from '../world.js';
+import { getPlayerId, sceneTransition, getScenes, startTransition } from './scene.js';
+import { camera, worldState } from '../world.js';
 import { hud } from '../ui/hud.js';
 
 // ================================================================
