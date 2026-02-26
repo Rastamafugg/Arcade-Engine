@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Pixel Canvas v5.2 — Overworld Demo (Enhanced)</title>
+<title>Pixel Canvas v5.1 — Overworld Demo (Enhanced)</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -29,9 +29,63 @@
 <div id="debug"></div>
 <div id="hint">WASD: move  |  Z: talk/open/use item  |  X: attack  |  E/Q: cycle items  |  M: minimap  |  F5: save  |  F9: load</div>
 
-<script src="pixel-canvas-engine.js"></script>
 
-<script>
+<script type="module">
+import * as Engine from './pixelGameEngine/index.js';
+
+const {
+  // Config
+  TILE_SIZE,
+  // Assets
+  buildSpriteCache, buildPaletteSwap,
+  // World / Tilemap
+  worldState, camera, registerTileAnims, drawTilemap,
+  // Renderer
+  clearBuffer, flushBuffer, fillRectPx, fillRectWorld, drawText, drawBox, blendPixel,
+  // Physics
+  spatialHash,
+  // ECS
+  world,
+  // Input
+  input,
+  // Sound
+  sound,
+  // Animation
+  createAnimator, animatorPlay, animatorUpdate, animatorSprite,
+  // Particles
+  emitBurst, updateParticles, renderParticles,
+  // Scene
+  registerScenes, loadScene, clearSceneEntities,
+  setNpcClipFactory, spawnSceneNpcs, spawnSceneChests,
+  // Flags
+  setFlag, clearFlag, getFlag, hasFlags, onFlags,
+  // Dialog
+  dialog, sysDialog, renderDialog,
+  // Cutscene
+  cutscene,
+  // Combat
+  sysSwing, sysProjectile, sysDamage,
+  // Enemy
+  sysEnemy, sysEnemyAI, spawnEnemy, spawnRangedEnemy,
+  // Spawner
+  createSpawner, sysSpawner,
+  // Chest
+  sysChestLoot,
+  // Save/Load
+  renderSaveNote, showNote,
+  // Game loop systems
+  engineTick, sysInput, sysAI, sysMovement, sysSpatialHash,
+  sysAnimation, sysCamera, sysSceneTransition, sysRender,
+  // HUD
+  hud, renderHUD,
+  // Minimap
+  renderMinimap,
+  // Transition
+  renderTransitionOverlay,
+  // Scene exports (re-exported from scene.js)
+  _scenes, sceneTransition,
+} = Engine;
+
 'use strict';
 
 // ================================================================
@@ -69,24 +123,19 @@ const SPRITES = {
     23,23,23,23,23,23,23,23,  13,23,23,23,13,23,23,13,
     23,13,23,23,23,13,23,23,  23,23,13,23,23,23,13,23,
   ],
+  // Deeper cave floor — slightly darker stone
   cave_floor_b2: [
     30,30,29,30,30,30,30,30,  30,30,30,30,29,30,30,30,
     30,30,30,29,30,30,30,30,  23,23,23,30,23,23,23,23,
     23,23,23,23,23,23,23,23,  30,23,23,23,30,23,23,30,
     23,30,23,23,23,30,23,23,  23,23,30,23,23,23,30,23,
   ],
+  // Deepest cave floor
   cave_floor_b3: [
     14,14,30,14,14,14,14,14,  14,14,14,14,30,14,14,14,
     14,14,14,30,14,14,14,14,  30,30,30,14,30,30,30,30,
     30,30,30,30,30,30,30,30,  14,30,30,30,14,30,30,14,
     30,14,30,30,30,14,30,30,  30,30,14,30,30,30,14,30,
-  ],
-  // Boss chamber floor — deepest, blood-tinged
-  cave_floor_b4: [
-    14,30,14,14,14,14,30,14,  14,14,14,30,14,14,14,14,
-    30,14,14,14,30,14,14,14,  26,26,26,14,26,26,26,26,
-    26,26,26,26,26,26,26,26,  14,26,26,26,14,26,26,14,
-    26,14,26,26,26,14,26,26,  26,26,14,26,26,26,14,26,
   ],
   water0: [
     18,17,18,18,18,17,18,18,  18,18,17,18,18,18,17,18,
@@ -141,85 +190,87 @@ const SPRITES = {
     null,null,25,25,25,null,null,null,
     null,null,null,null,null,null,null,null,
   ],
-  stairs_up: [
-    22,22,22,22,22,22,22,22,
-    null,20,20,20,20,20,20,null,
-    null,null,20,20,20,20,null,null,
-    null,null,null,20,20,null,null,null,
-    null,null,null,null,null,null,null,null,
-    null,null,null,null,null,null,null,null,
-    null,null,null,null,null,null,null,null,
-    null,null,null,null,null,null,null,null,
-  ],
+  // Stair portals
   stairs_down: [
-    null,null,null,null,null,null,null,null,
-    null,null,null,null,null,null,null,null,
-    null,null,null,null,null,null,null,null,
-    null,null,null,20,20,null,null,null,
-    null,null,20,20,20,20,null,null,
-    null,20,20,20,20,20,20,null,
-    22,22,22,22,22,22,22,22,
-    null,null,null,null,null,null,null,null,
+    20,20,20,20,20,20,20,20,
+    null,22,22,22,22,22,22,22,
+    null,null,22,22,22,22,22,22,
+    null,null,null,22,22,22,22,22,
+    null,null,null,null,22,22,22,22,
+    null,null,null,null,null,22,22,22,
+    null,null,null,null,null,null,22,22,
+    null,null,null,null,null,null,null,22,
+  ],
+  stairs_up: [
+    22,null,null,null,null,null,null,null,
+    22,22,null,null,null,null,null,null,
+    22,22,22,null,null,null,null,null,
+    22,22,22,22,null,null,null,null,
+    22,22,22,22,22,null,null,null,
+    22,22,22,22,22,22,null,null,
+    22,22,22,22,22,22,22,null,
+    20,20,20,20,20,20,20,20,
   ],
   // ---- Items ----
   coin_item: [
-    null,null,null,null,null,null,null,null,
-    null,null, 7, 7, 7,null,null,null,
-    null, 7,   4,  7,  4,  7,null,null,
-    null, 7,   7,  7,  7,  7,null,null,
-    null, 7,   4,  7,  4,  7,null,null,
-    null,null, 7, 7, 7,null,null,null,
-    null,null,null,null,null,null,null,null,
+    null,null, 7, 7, 7, 7,null,null,
+    null, 7,  20, 7, 7, 7, 7,null,
+     7,  20,  7, 7, 7, 7, 7, 7,
+     7,   7,  7, 7, 7, 7, 7, 7,
+     7,   7,  7, 7, 7, 7, 7, 7,
+    null, 7,  7, 7, 7, 7, 7,null,
+    null,null, 7, 7, 7, 7,null,null,
     null,null,null,null,null,null,null,null,
   ],
   heart_item: [
-    null,null,null,null,null,null,null,null,
-    null,27,27,null,27,27,null,null,
-    27, 27,27,27,27,27,27,null,
-    27, 27,27,27,27,27,27,null,
-    null,27,27,27,27,27,null,null,
-    null,null,27,27,27,null,null,null,
-    null,null,null,27,null,null,null,null,
+    null,27,27,null,null,27,27,null,
+    27,27,27,27,27,27,27,27,
+    27,27,27,27,27,27,27,27,
+    27,27,27,27,27,27,27,27,
+    null,27,27,27,27,27,27,null,
+    null,null,27,27,27,27,null,null,
+    null,null,null,27,27,null,null,null,
     null,null,null,null,null,null,null,null,
   ],
   key_item: [
-    null,null, 7, 7, 7,null,null,null,
-    null, 7,   4,  4,  4,  7,null,null,
-    null, 7,   4,null, 4,  7,null,null,
-    null, 7,   4,  4,  4,  7,null,null,
-    null,null, 7, 3,null,null,null,null,
-    null,null,null, 3,null,null,null,null,
-    null,null,null, 3, 3,null,null,null,
-    null,null,null,null,null,null,null,null,
-  ],
-  potion_item: [
-    null,null,null, 5, 5,null,null,null,
-    null,null,null, 5, 5,null,null,null,
-    null,null,18,  18, 18, 18,null,null,
-    null,18,  19,  18, 18, 19, 18,null,
-    null,18,  18,  18, 18, 18, 18,null,
-    null,18,  18,  18, 18, 18, 18,null,
-    null,null,18,  18, 18, 18,null,null,
+    null,null, 7, 7,null,null,null,null,
+    null, 7,   5, 5, 7,null,null,null,
+    null, 7,   5, 5, 7,null,null,null,
+    null,null, 7, 7,null, 5,null,null,
+    null,null,null, 7, 5, 5, 5,null,
+    null,null,null, 7,null, 5,null,null,
+    null,null,null, 7,null,null,null,null,
     null,null,null,null,null,null,null,null,
   ],
   bomb_item: [
     null,null,null, 3,null,null,null,null,
-    null,null, 3,null, 3,null,null,null,
-    null,null,null, 3,null,null,null,null,
-    null,null,22,22,22,null,null,null,
-    null,22,  23, 23, 23, 22,null,null,
-    null,22,  23, 23, 23, 22,null,null,
-    null,null,22,22,22,null,null,null,
+    null,null, 2,   2, 3,null,null,null,
+    null, 2,  26,  26,  2,null,null,null,
+     2,  26,  27,  26,  26,  2,null,null,
+     2,  26,  26,  26,  26,  2,null,null,
+    null, 2,  26,  26,  2,null,null,null,
+    null,null, 2,   2,null,null,null,null,
     null,null,null,null,null,null,null,null,
   ],
+  potion_item: [
+    null,null,null,20,20,null,null,null,
+    null,null,20, 20,20, 20,null,null,
+    null,null,20, 18,18, 20,null,null,
+    null,20,  18, 18,18,  18,20,null,
+    null,20,  18, 18,18,  18,20,null,
+    null,20,  18, 18,18,  18,20,null,
+    null,null,20, 20,20, 20,null,null,
+    null,null,null,20,20,null,null,null,
+  ],
+  // ---- Weapon pickups ----
   sword_item: [
-    null,null,null,null,null, 7,20,null,
-    null,null,null,null,20,20,null,null,
+    null,null,null,null,null,null, 7, 7,
+    null,null,null,null,null,20,20,null,
+    null,null,null,null,20,22,null,null,
     null,null,null,20,22,null,null,null,
     null,null,20,22,null, 3,null,null,
     null,20,22,null, 3,null,null,null,
     20,null,null, 3,null,null,null,null,
-    null,null,null,null,null,null,null,null,
     null,null,null,null,null,null,null,null,
   ],
   bow_item: [
@@ -273,38 +324,6 @@ const SPRITES = {
     null,null,null,null,null,null,null,null,
     null,null,null,null,null,null,null,null,
   ],
-  // Boss magic orb projectile
-  boss_orb: [
-    null,null,null,null,null,null,null,null,
-    null,null,25,25,25,null,null,null,
-    null,25,  19,20,19,  25,null,null,
-    null,25,  20,25,20,  25,null,null,
-    null,25,  19,20,19,  25,null,null,
-    null,null,25,25,25,null,null,null,
-    null,null,null,null,null,null,null,null,
-    null,null,null,null,null,null,null,null,
-  ],
-  // Boss minion (shade — dark, fast)
-  shade_0: [
-    null,null,30,30,30,30,null,null,
-    null,30,  14,30,30, 14, 30,null,
-    null,30,  30,30,30, 30, 30,null,
-    null,31,  31,31,31, 31, 31,null,
-      31,31,  14,31,31, 14, 31, 31,
-    null,31,  31,31,31, 31, 31,null,
-    null,31,null,null,null,null, 31,null,
-    null,null,null,null,null,null,null,null,
-  ],
-  shade_1: [
-    null,null,null,null,null,null,null,null,
-    null,30,  30,30,30, 30, 30,null,
-    null,30,  14,30,30, 14, 30,null,
-    null,31,  31,31,31, 31, 31,null,
-    null,null, 31,31,31, 31,null,null,
-      31,31,  14,31,31, 14, 31, 31,
-    null,31,null,null,null,null, 31,null,
-    null,null,null,null,null,null,null,null,
-  ],
   // ---- NPCs ----
   npc_a: [
     null,null,  7,  7,  7,  7,null,null,
@@ -321,7 +340,7 @@ const SPRITES = {
     null,  5, 13,  5,  5, 13,  5,null,
     null,  5,  5,  5,  5,  5,  5,null,
     null, 27, 27, 27, 27, 27, 27,null,
-    27, 27,  6, 27, 27,  6, 27, 27,
+      27, 27,  6, 27, 27,  6, 27, 27,
     null, 27,  6,  6,  6,  6, 27,null,
     null,  6,null,null,null,null,  6,null,
     null,  6,null,null,null,null,  6,null,
@@ -394,10 +413,11 @@ const SPRITES = {
     null, 16, 16, 16, 16, 16, 16,null,
     null, 16,  5, 16, 16,  5, 16,null,
     null, 16,  5,  5,  5,  5,null,null,
-    null,null,null,null,  5,  5,null,null,
-    null,null,null,null,null,  5,null,null,
+    null,null,null,  5,  5,null,null,null,
+    null,null,null,null,  5,null,null,null,
   ],
   // ---- Enemies ----
+  // Slime (cave level 1) — green blob
   slime_0: [
     null,null, 9, 9, 9, 9,null,null,
     null, 9,  9, 9, 9, 9, 9,null,
@@ -418,6 +438,7 @@ const SPRITES = {
     null, 9,null,null,null,null, 9,null,
     null,null,null,null,null,null,null,null,
   ],
+  // Bat (cave level 2) — purple
   bat_0: [
     14,14,null,25,25,null,14,14,
     14,null,25,25,25,25,null,14,
@@ -438,6 +459,7 @@ const SPRITES = {
     null,null,null,25,null,null,null,null,
     null,null,null,null,null,null,null,null,
   ],
+  // Skeleton (cave level 3) — bone white
   skel_0: [
     null,null,20,20,20,20,null,null,
     null,20, 1,20,20, 1,20,null,
@@ -457,69 +479,6 @@ const SPRITES = {
       22,22,null,22,22,null,22,22,
       22,null,null,22,22,null,null,22,
     null,null,null,null,null,null,null,null,
-  ],
-  // ---- Boss — Phase 1 (dark knight, aggressive melee) ----
-  boss_0: [
-    null, 1, 1, 1, 1, 1, 1,null,
-       1,24, 1,26,26, 1,24, 1,
-       1, 1,26, 1, 1,26, 1, 1,
-       1,26,26,26,26,26,26, 1,
-      26,26, 1,26,26, 1,26,26,
-    null,26,26,26,26,26,26,null,
-    null,26,null,26,26,null,26,null,
-    null,26,null,null,null,null,26,null,
-  ],
-  boss_1: [
-    null, 1, 1, 1, 1, 1, 1,null,
-       1,24, 1,26,26, 1,24, 1,
-       1, 1,26, 1, 1,26, 1, 1,
-       1,26,26,26,26,26,26, 1,
-      26,26, 1,26,26, 1,26,26,
-    null,26,26,26,26,26,26,null,
-    null,null,null,26,26,null,null,null,
-    null,null,null,null,26,null,null,null,
-  ],
-  // ---- Boss — Phase 2 (mage form, glowing purple) ----
-  boss_p2_0: [
-    null,25,25,25,25,25,25,null,
-      25,19,25,20,20,25,19,25,
-      25,25,20,25,25,20,25,25,
-      25,20,20,25,25,20,20,25,
-      19,25,25,25,25,25,25,19,
-    null,25,18,25,25,18,25,null,
-    null,25,null,25,25,null,25,null,
-    null,18,null,null,null,null,18,null,
-  ],
-  boss_p2_1: [
-    null,25,25,25,25,25,25,null,
-      25,19,25,20,20,25,19,25,
-      25,25,20,25,25,20,25,25,
-      19,20,20,25,25,20,20,19,
-      25,25,25,25,25,25,25,25,
-    null,19,18,25,25,18,19,null,
-    null,null,null,25,25,null,null,null,
-    null,18,null,null,null,null,18,null,
-  ],
-  // ---- Boss — Phase 3 (void form, spawner) ----
-  boss_p3_0: [
-    null,31,31,31,31,31,31,null,
-      31,14,31,19,19,31,14,31,
-      31,31,19,31,31,19,31,31,
-      31,19,19,31,31,19,19,31,
-      14,31,31,31,31,31,31,14,
-    null,31,31,31,31,31,31,null,
-    null,14,null,31,31,null,14,null,
-    null,14,null,null,null,null,14,null,
-  ],
-  boss_p3_1: [
-    null,31,31,31,31,31,31,null,
-      31,14,31,19,19,31,14,31,
-      31,31,19,31,31,19,31,31,
-      14,19,19,31,31,19,19,14,
-      31,31,31,31,31,31,31,31,
-    null,14,31,31,31,31,14,null,
-    null,null,null,31,31,null,null,null,
-    null,14,null,null,null,null,14,null,
   ],
 };
 
@@ -563,30 +522,6 @@ sound.registerTracks({
         notes: 'D2:6 R:2 C2:6 R:2 A1:8 R:8' },
     ],
   },
-  boss_battle: {
-    bpm: 160, loop: true,
-    channels: [
-      { instrument: 'square',
-        notes: 'A4:0.5 A4:0.5 R:0.5 A4:0.5 C5:1 B4:1 A4:0.5 G4:0.5 A4:2 R:1 ' +
-               'F4:0.5 F4:0.5 R:0.5 F4:0.5 Ab4:1 G4:1 F4:0.5 E4:0.5 F4:2 R:1 ' +
-               'D4:0.5 E4:0.5 F4:1 G4:1 A4:2 G4:1 F4:1 E4:2 R:2' },
-      { instrument: 'triangle',
-        notes: 'A2:2 A2:2 C3:2 B2:2 A2:4 R:4 F2:2 F2:2 Ab2:2 G2:2 F2:4 R:4 D2:4 E2:4 F2:4 R:4' },
-      { instrument: 'sine',
-        notes: 'R:8 A5:0.25 R:0.25 A5:0.25 R:0.25 A5:0.25 R:0.25 A5:0.25 R:0.25 R:4 ' +
-               'R:8 F5:0.25 R:0.25 F5:0.25 R:0.25 F5:0.25 R:0.25 F5:0.25 R:0.25 R:4' },
-    ],
-  },
-  victory: {
-    bpm: 120, loop: false,
-    channels: [
-      { instrument: 'square',
-        notes: 'C5:0.5 E5:0.5 G5:0.5 C6:1 R:0.5 E6:0.5 G6:0.5 E6:0.5 C6:2 R:1 ' +
-               'G5:0.5 B5:0.5 D6:0.5 G6:1.5 R:0.5 C6:0.5 E6:0.5 G6:1 C7:3' },
-      { instrument: 'triangle',
-        notes: 'C4:2 G3:2 C4:2 G3:2 C4:4 G3:4 C4:2 G3:2 C4:6' },
-    ],
-  },
 });
 
 sound.registerSFX({
@@ -606,18 +541,158 @@ sound.registerSFX({
   sword_swing: { bpm:480, channels:[{ instrument:'square',   notes:'G5:0.05 C6:0.07' }] },
   bow_fire:    { bpm:480, channels:[{ instrument:'triangle', notes:'E6:0.04 A5:0.06' }] },
   axe_swing:   { bpm:240, channels:[{ instrument:'square',   notes:'D4:0.1 A3:0.12' }] },
-  enemy_die:   { bpm:480, channels:[{ instrument:'square',   notes:'C4:0.06 A3:0.08 F3:0.1' }] },
-  stairs:      { bpm:480, channels:[{ instrument:'triangle', notes:'C4:0.05 E4:0.05 G4:0.08' }] },
-  weapon_get:  { bpm:480, channels:[{ instrument:'square',   notes:'C5:0.1 E5:0.1 G5:0.1 C6:0.2' }] },
-  alert:       { bpm:480, channels:[{ instrument:'sine',     notes:'A4:0.1 C#5:0.1 E5:0.1 A5:0.2 R:0.1 A6:0.3' }] },
-  boss_hit:    { bpm:240, channels:[{ instrument:'square',   notes:'G3:0.08 E3:0.12' },
-                                     { instrument:'triangle', notes:'C2:0.2' }] },
-  boss_phase:  { bpm:120, channels:[{ instrument:'square',   notes:'A3:0.3 R:0.1 A3:0.3 R:0.1 C4:0.5 E4:0.8' },
-                                     { instrument:'sine',     notes:'A2:1.5 R:0.5' }] },
-  boss_summon: { bpm:240, channels:[{ instrument:'sine',     notes:'A4:0.1 G4:0.1 F4:0.1 E4:0.15 D4:0.2 C4:0.3' }] },
-  boss_magic:  { bpm:480, channels:[{ instrument:'sine',     notes:'E6:0.06 A6:0.08 E7:0.1' }] },
-  victory:     { bpm:480, channels:[{ instrument:'square',   notes:'C5:0.1 E5:0.1 G5:0.1 C6:0.3 R:0.1 G5:0.3 C6:0.5' }] },
+  enemy_die:   { bpm:480, channels:[{ instrument:'square',   notes:'C5:0.05 A4:0.05 F4:0.08' }] },
+  weapon_get:  { bpm:480, channels:[{ instrument:'square',   notes:'C5:0.08 E5:0.08 G5:0.08 C6:0.2' },
+                                     { instrument:'triangle', notes:'G3:0.44' }] },
+  stairs:      { bpm:480, channels:[{ instrument:'sine',     notes:'C4:0.1 E4:0.1 G4:0.15' }] },
 });
+
+// ================================================================
+// ANIMATION CLIPS
+// ================================================================
+const CLIPS_PLAYER = {
+  idle:      { frames: ['player_idle'],           durations: 0.2  },
+  walk_down: { frames: ['player_d0','player_d1'], durations: 0.18 },
+  walk_up:   { frames: ['player_u0','player_u1'], durations: 0.18 },
+  walk_side: { frames: ['player_s0','player_s1'], durations: 0.18 },
+};
+
+setNpcClipFactory(sprite => ({
+  idle:      { frames: [sprite], durations: 0.4 },
+  walk_down: { frames: [sprite], durations: 0.3 },
+  walk_up:   { frames: [sprite], durations: 0.3 },
+  walk_side: { frames: [sprite], durations: 0.3 },
+}));
+
+// ================================================================
+// COLLECTIBLE SYSTEM
+// ================================================================
+const _pickupFlags = new Map();
+
+function spawnPickupFlagged(wx, wy, type, flagName) {
+  if (getFlag(flagName)) return;
+  const id = world.createEntity({
+    transform: { x: wx, y: wy },
+    sprite:    { name: type + '_item', flipX: false },
+    pickup:    { type, collected: false },
+  });
+  _pickupFlags.set(id, flagName);
+  return id;
+}
+
+function sysPickups() {
+  const ptf = world.get(playerId, 'transform');
+  if (!ptf) return;
+  for (const id of world.query('pickup', 'transform')) {
+    const p  = world.get(id, 'pickup');
+    if (p.collected) continue;
+    const tf = world.get(id, 'transform');
+    const dx = ptf.x - tf.x, dy = ptf.y - tf.y;
+    if (Math.abs(dx) < 7 && Math.abs(dy) < 7) {
+      p.collected = true;
+      switch (p.type) {
+        case 'coin':
+          hud.addCoins(1);
+          sound.playSFX('coin');
+          emitBurst(tf.x + 4, tf.y + 4, 'coin');
+          break;
+        case 'heart':
+          hud.addHp(2);
+          sound.playSFX('heal');
+          emitBurst(tf.x + 4, tf.y + 4, 'sparkle');
+          break;
+        case 'key':
+          setFlag('hasKey');
+          hud.setItem(0, 'key_item');
+          hud.selectedSlot = 0;
+          sound.playSFX('confirm');
+          emitBurst(tf.x + 4, tf.y + 4, 'levelup');
+          showNote('KEY OBTAINED!');
+          break;
+        default:
+          showNote(p.type.toUpperCase() + ' [E/Q to cycle items]');
+          break;
+      }
+      world.destroyEntity(id);
+    }
+  }
+}
+
+function sysPickupFlags() {
+  for (const [id, flagName] of [..._pickupFlags]) {
+    if (!world.has(id, 'pickup')) {
+      setFlag(flagName);
+      _pickupFlags.delete(id);
+    }
+  }
+}
+
+// ================================================================
+// COMBAT / WEAPON SYSTEM
+// ================================================================
+const ZELDA_WEAPONS = {
+  sword_basic: {
+    name: 'SWORD', type: 'melee',
+    damage: 1, cooldownMax: 0.4,
+    swingW: 14, swingH: 14, swingLife: 0.15,
+    swingSprite: 'sword_swing', knockback: 55,
+    sfx: 'sword_swing', team: 'player',
+  },
+  sword_item: {
+    name: 'IRON SWORD', type: 'melee',
+    damage: 2, cooldownMax: 0.35,
+    swingW: 16, swingH: 16, swingLife: 0.18,
+    swingSprite: 'sword_swing', knockback: 75,
+    sfx: 'sword_swing', team: 'player',
+  },
+  bow_item: {
+    name: 'BOW', type: 'ranged',
+    damage: 1, cooldownMax: 0.65,
+    projSprite: 'arrow_proj', projSpeed: 135, projLife: 1.5,
+    piercing: false, knockback: 20,
+    sfx: 'bow_fire', team: 'player',
+  },
+  axe_item: {
+    name: 'WAR AXE', type: 'melee',
+    damage: 3, cooldownMax: 0.85,
+    swingW: 18, swingH: 18, swingLife: 0.22,
+    swingSprite: 'sword_swing', knockback: 110,
+    sfx: 'axe_swing', team: 'player',
+  },
+  shield_item: null, // passive — handled in damageable onHit
+};
+
+// Player facing direction, updated in sysInput override
+let playerFacing = { dx: 1, dy: 0 };
+let attackCooldown = 0;
+
+function sysPlayerAttack(delta) {
+  if (dialog.active || cutscene.isInputLocked() || sceneTransition.state !== 'none') return;
+  if (attackCooldown > 0) { attackCooldown = Math.max(0, attackCooldown - delta); return; }
+  if (!input.pressed('attack')) return;
+
+  const ptf = world.get(playerId, 'transform');
+  if (!ptf) return;
+
+  // Resolve active weapon: selected item slot or default sword
+  const selectedItem = hud.selectedSlot !== null ? hud.items[hud.selectedSlot] : null;
+  let weaponKey = 'sword_basic';
+  if (selectedItem === 'sword_item') weaponKey = 'sword_item';
+  else if (selectedItem === 'bow_item')   weaponKey = 'bow_item';
+  else if (selectedItem === 'axe_item')   weaponKey = 'axe_item';
+  else if (selectedItem === 'shield_item') {
+    showNote('SHIELD IS PASSIVE — EQUIP A WEAPON');
+    return;
+  }
+
+  const weapon = ZELDA_WEAPONS[weaponKey];
+  if (!weapon) return;
+
+  spawnAttack(playerId, weapon, ptf.x, ptf.y, playerFacing.dx, playerFacing.dy);
+  attackCooldown = weapon.cooldownMax;
+  sound.playSFX(weapon.sfx);
+  showNote(weapon.name + '!', 0.6);
+}
 
 // ================================================================
 // ENEMY SYSTEM
@@ -644,18 +719,9 @@ const ENEMY_DEFS = {
     damage: 2, knockback: 55,
     drop: 'heart',
   },
-  shade: {
-    frames: ['shade_0','shade_1'],
-    speed: 60, aggroRange: 96,
-    hp: 3, maxHp: 3,
-    damage: 1, knockback: 35,
-    drop: 'coin',
-  },
 };
 
-// Spawn a standard enemy at a tile position.
-// opts.aggroGroup — string name to link into aggro table propagation.
-function spawnEnemy(type, tileX, tileY, opts = {}) {
+function spawnEnemy(type, tileX, tileY) {
   const def = ENEMY_DEFS[type];
   if (!def) return;
   world.createEntity({
@@ -667,7 +733,6 @@ function spawnEnemy(type, tileX, tileY, opts = {}) {
       type,
       speed:       def.speed,
       aggroRange:  def.aggroRange,
-      aggroGroup:  opts.aggroGroup ?? null,   // ← aggro group support
       frames:      def.frames,
       frameIdx:    0,
       animTimer:   0,
@@ -675,7 +740,6 @@ function spawnEnemy(type, tileX, tileY, opts = {}) {
       wanderDx:    Math.cos(Math.random() * Math.PI * 2),
       wanderDy:    Math.sin(Math.random() * Math.PI * 2),
       drop:        def.drop,
-      aggrod:      false,   // tracks whether this enemy has entered chase
     },
     damageable: {
       hp: def.hp, maxHp: def.maxHp,
@@ -690,6 +754,7 @@ function spawnEnemy(type, tileX, tileY, opts = {}) {
         const tf = world.get(vid, 'transform');
         if (tf && e) {
           emitBurst(tf.x + 4, tf.y + 4, 'levelup');
+          // Drop item — no flag (enemy drops are ephemeral)
           world.createEntity({
             transform: { x: tf.x, y: tf.y },
             sprite:    { name: e.drop + '_item', flipX: false },
@@ -704,273 +769,6 @@ function spawnEnemy(type, tileX, tileY, opts = {}) {
   });
 }
 
-// ================================================================
-// SKELETON SPAWNER — cave_b3 continuously respawns skeletons
-// ================================================================
-const B3_SPAWNER_INTERVAL = 10;  // seconds
-let b3SpawnerTimer   = 0;
-let b3SpawnerActive  = false;
-const B3_SPAWN_POSITIONS = [
-  [2, 3], [17, 3], [2, 12], [10, 3], [10, 13],
-];
-
-function resetB3Spawner() {
-  b3SpawnerTimer  = B3_SPAWNER_INTERVAL;
-  b3SpawnerActive = false;
-}
-
-function sysB3Spawner(delta) {
-  if (!b3SpawnerActive) return;
-
-  b3SpawnerTimer -= delta;
-  if (b3SpawnerTimer <= 0) {
-    b3SpawnerTimer = B3_SPAWNER_INTERVAL;
-
-    // Spawn up to 3 skeletons at random positions (cap to avoid flooding)
-    const aliveCount = world.query('enemy').filter(
-      id => world.get(id,'enemy')?.type === 'skeleton'
-    ).length;
-    const toSpawn = Math.max(0, 3 - aliveCount);
-    for (let i = 0; i < toSpawn; i++) {
-      const pos = B3_SPAWN_POSITIONS[Math.floor(Math.random() * B3_SPAWN_POSITIONS.length)];
-      spawnEnemy('skeleton', pos[0], pos[1]);
-      emitBurst(pos[0] * TILE_SIZE + 4, pos[1] * TILE_SIZE + 4, 'portal');
-    }
-    if (toSpawn > 0) {
-      showNote('SKELETONS RISE FROM THE DARK...', 2.0);
-      sound.playSFX('boss_summon');
-    }
-  }
-}
-
-// ================================================================
-// BOSS SYSTEM — cave_b4 three-phase boss
-// ================================================================
-let bossId     = -1;
-let bossPhase  = 0;   // 0=inactive, 1=melee, 2=ranged, 3=summon
-let bossActive = false;
-let bossMagicTimer = 0;
-const BOSS_MAGIC_INTERVAL = 2.2;
-
-const BOSS_MAX_HP   = 30;
-const BOSS_PHASE2_HP = 20;   // trigger P2 at ≤20 HP
-const BOSS_PHASE3_HP = 10;   // trigger P3 at ≤10 HP
-
-function spawnBoss() {
-  if (getFlag('boss_dead')) return;
-  bossId = world.createEntity({
-    transform: { x: 9 * TILE_SIZE, y: 8 * TILE_SIZE },
-    sprite:    { name: 'boss_0', flipX: false },
-    velocity:  { dx: 0, dy: 0, speed: 30 },
-    collider:  true,
-    boss: {
-      phase: 1,
-      frames_p1: ['boss_0',   'boss_1'],
-      frames_p2: ['boss_p2_0','boss_p2_1'],
-      frames_p3: ['boss_p3_0','boss_p3_1'],
-      frameIdx:  0, animTimer: 0,
-    },
-    damageable: {
-      hp: BOSS_MAX_HP, maxHp: BOSS_MAX_HP,
-      iframes: 0, iframeMax: 0.5,
-      team: 'boss',
-      onHit(vid) {
-        const tf = world.get(vid, 'transform');
-        if (tf) emitBurst(tf.x + 4, tf.y + 4, 'hit');
-        sound.playSFX('boss_hit');
-      },
-      onDeath(vid) {
-        const tf = world.get(vid, 'transform');
-        if (tf) emitBurst(tf.x + 4, tf.y + 4, 'levelup');
-        bossActive = false;
-        bossPhase  = 0;
-        bossId     = -1;
-        setFlag('boss_dead');
-        world.destroyEntity(vid);
-        // Victory sequence
-        setTimeout(() => {
-          cutscene.run([
-            { cmd: 'lockInput', value: true },
-            { cmd: 'stopBgm' },
-            { cmd: 'bgm', name: 'victory' },
-            { cmd: 'wait', seconds: 0.5 },
-            { cmd: 'note', text: 'THE VOID LORD HAS BEEN DEFEATED!' },
-            { cmd: 'wait', seconds: 1.5 },
-            { cmd: 'dialog', name: 'SYSTEM', lines: [
-                'THE DARKNESS RETREATS.',
-                'THE CAVE IS FREED FROM ITS CURSE.',
-                'YOU HAVE PROVEN YOURSELF A TRUE HERO.',
-            ]},
-            { cmd: 'call', fn() {
-                emitBurst(9 * TILE_SIZE + 4, 8 * TILE_SIZE + 4, 'chest');
-                emitBurst(9 * TILE_SIZE + 4, 8 * TILE_SIZE + 4, 'levelup');
-                emitBurst(9 * TILE_SIZE + 4, 8 * TILE_SIZE + 4, 'portal');
-                hud.setMaxHp(hud.maxHp + 4);
-                hud.addHp(hud.maxHp);
-                sound.playSFX('victory');
-            }},
-            { cmd: 'note', text: '+4 MAX HP! FULL HEAL!' },
-            { cmd: 'wait', seconds: 2.0 },
-            { cmd: 'stopBgm' },
-            { cmd: 'bgm', name: 'overworld' },
-            { cmd: 'lockInput', value: false },
-          ]);
-        }, 100);
-      },
-    },
-    damager: { damage: 2, team: 'boss', knockback: 60 },
-  });
-  bossPhase  = 1;
-  bossActive = true;
-  bossMagicTimer = BOSS_MAGIC_INTERVAL;
-}
-
-function _triggerBossPhase2() {
-  if (bossPhase !== 1) return;
-  bossPhase = 2;
-  bossMagicTimer = BOSS_MAGIC_INTERVAL;
-  const boss = world.get(bossId, 'boss');
-  if (boss) boss.phase = 2;
-  // Speed boost for phase 2
-  const vel = world.get(bossId, 'velocity');
-  if (vel) vel.speed = 22;
-
-  sound.playSFX('boss_phase');
-  emitBurst(9 * TILE_SIZE + 4, 8 * TILE_SIZE + 4, 'portal');
-  showNote('THE VOID LORD TRANSFORMS — PHASE 2!', 3.0);
-}
-
-function _triggerBossPhase3() {
-  if (bossPhase !== 2) return;
-  bossPhase = 3;
-  bossMagicTimer = BOSS_MAGIC_INTERVAL * 0.6;
-  const boss = world.get(bossId, 'boss');
-  if (boss) boss.phase = 3;
-  const vel = world.get(bossId, 'velocity');
-  if (vel) vel.speed = 14;
-
-  sound.playSFX('boss_phase');
-  emitBurst(9 * TILE_SIZE + 4, 8 * TILE_SIZE + 4, 'portal');
-  showNote('THE VOID LORD AWAKENS ITS MINIONS — PHASE 3!', 3.0);
-
-  // Spawn initial minions
-  _spawnBossMinions();
-}
-
-function _spawnBossMinions() {
-  const positions = [[5,5],[13,5],[5,11],[13,11]];
-  for (const [tx, ty] of positions) {
-    spawnEnemy('shade', tx, ty);
-    emitBurst(tx * TILE_SIZE + 4, ty * TILE_SIZE + 4, 'portal');
-  }
-  sound.playSFX('boss_summon');
-}
-
-function _fireBossMagic() {
-  if (!world.has(bossId, 'transform')) return;
-  const bTf  = world.get(bossId, 'transform');
-  const ptf  = world.get(playerId, 'transform');
-  if (!bTf || !ptf) return;
-
-  const dx   = ptf.x - bTf.x;
-  const dy   = ptf.y - bTf.y;
-  const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-  const spd  = 55;
-
-  world.createEntity({
-    transform: { x: bTf.x + 4, y: bTf.y + 4 },
-    sprite:    { name: 'boss_orb', flipX: false },
-    velocity:  { dx: (dx / dist) * spd, dy: (dy / dist) * spd, speed: spd },
-    projectile: {
-      lifetime: 3.5,
-      team:    'boss',
-      damage:  2,
-      knockback: 40,
-    },
-  });
-  sound.playSFX('boss_magic');
-}
-
-function sysBoss(delta) {
-  if (!bossActive || bossId < 0) return;
-  if (!world.has(bossId, 'damageable')) return;
-
-  const dmg  = world.get(bossId, 'damageable');
-  const boss = world.get(bossId, 'boss');
-  const tf   = world.get(bossId, 'transform');
-  const vel  = world.get(bossId, 'velocity');
-  const sp   = world.get(bossId, 'sprite');
-  if (!dmg || !boss || !tf || !vel) return;
-
-  // Phase transition checks
-  if (bossPhase === 1 && dmg.hp <= BOSS_PHASE2_HP) _triggerBossPhase2();
-  if (bossPhase === 2 && dmg.hp <= BOSS_PHASE3_HP) _triggerBossPhase3();
-
-  // Animate boss sprite
-  boss.animTimer += delta;
-  if (boss.animTimer >= 0.25) {
-    boss.animTimer = 0;
-    boss.frameIdx  = (boss.frameIdx + 1) % 2;
-    const frames = boss.phase === 1 ? boss.frames_p1
-                 : boss.phase === 2 ? boss.frames_p2
-                 : boss.frames_p3;
-    if (sp) sp.name = frames[boss.frameIdx];
-  }
-
-  const ptf = world.get(playerId, 'transform');
-  if (!ptf) return;
-
-  const dx   = ptf.x - tf.x;
-  const dy   = ptf.y - tf.y;
-  const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-
-  if (bossPhase === 1) {
-    // PHASE 1 — chase and melee
-    vel.dx = (dx / dist) * vel.speed;
-    vel.dy = (dy / dist) * vel.speed;
-
-  } else if (bossPhase === 2) {
-    // PHASE 2 — kite + ranged magic
-    // Back away from player if too close
-    if (dist < 40) {
-      vel.dx = -(dx / dist) * vel.speed;
-      vel.dy = -(dy / dist) * vel.speed;
-    } else {
-      vel.dx *= 0.85; vel.dy *= 0.85;
-    }
-
-    bossMagicTimer -= delta;
-    if (bossMagicTimer <= 0) {
-      bossMagicTimer = BOSS_MAGIC_INTERVAL;
-      _fireBossMagic();
-    }
-
-  } else if (bossPhase === 3) {
-    // PHASE 3 — slow orbit + rapid magic + periodic minion summons
-    const angle = Math.atan2(dy, dx);
-    const orbitR = 48;
-    vel.dx = Math.cos(angle + 0.04) * vel.speed;
-    vel.dy = Math.sin(angle + 0.04) * vel.speed;
-
-    bossMagicTimer -= delta;
-    if (bossMagicTimer <= 0) {
-      bossMagicTimer = BOSS_MAGIC_INTERVAL * 0.5;
-      _fireBossMagic();
-      // Every third fire, summon another minion
-      if (Math.random() < 0.33) {
-        const px = [[5,5],[13,5],[5,11],[13,11]];
-        const pos = px[Math.floor(Math.random() * px.length)];
-        spawnEnemy('shade', pos[0], pos[1]);
-        emitBurst(pos[0] * TILE_SIZE + 4, pos[1] * TILE_SIZE + 4, 'portal');
-        sound.playSFX('boss_summon');
-      }
-    }
-  }
-}
-
-// ================================================================
-// ENEMY AI SYSTEM  (supports aggroGroup propagation)
-// ================================================================
 function sysEnemyAI(delta) {
   const ptf = world.get(playerId, 'transform');
   if (!ptf) return;
@@ -993,44 +791,113 @@ function sysEnemyAI(delta) {
     const dy   = ptf.y - tf.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
 
-    // Check if this enemy's aggroGroup has been triggered by another member
-    const groupAggrod = e.aggroGroup ? aggroTableActive(e.aggroGroup) : false;
-
-    if ((dist < e.aggroRange && dist > 2) || groupAggrod) {
+    if (dist < e.aggroRange && dist > 2) {
       // Chase player
-      vel.dx = (dx / dist || 0) * e.speed;
-      vel.dy = (dy / dist || 0) * e.speed;
+      vel.dx = (dx / dist) * e.speed;
+      vel.dy = (dy / dist) * e.speed;
       e.wanderTimer = 0;
-
-      // Alert the aggro group when this enemy first enters chase
-      if (!e.aggrod && e.aggroGroup) {
-        e.aggrod = true;
-        alertGroup(e.aggroGroup, tf.x, tf.y);
-      }
     } else {
       // Wander
       e.wanderTimer -= delta;
       if (e.wanderTimer <= 0) {
-        e.wanderTimer = 1.5 + Math.random() * 2;
-        const a = Math.random() * Math.PI * 2;
-        e.wanderDx = Math.cos(a);
-        e.wanderDy = Math.sin(a);
-        // Reset aggro tracking when returning to wander
-        e.aggrod = false;
+        e.wanderTimer = 1.2 + Math.random() * 2.0;
+        const angle = Math.random() * Math.PI * 2;
+        e.wanderDx = Math.cos(angle);
+        e.wanderDy = Math.sin(angle);
       }
-      vel.dx = e.wanderDx * e.speed * 0.3;
-      vel.dy = e.wanderDy * e.speed * 0.3;
+      vel.dx = e.wanderDx * e.speed * 0.45;
+      vel.dy = e.wanderDy * e.speed * 0.45;
     }
 
     // Animate
-    e.animTimer += delta;
-    if (e.animTimer >= 0.18) {
-      e.animTimer = 0;
-      e.frameIdx  = (e.frameIdx + 1) % e.frames.length;
-      if (sp) sp.name = e.frames[e.frameIdx];
+    if (sp) {
+      e.animTimer += delta;
+      if (e.animTimer >= 0.28) {
+        e.animTimer -= 0.28;
+        e.frameIdx = (e.frameIdx + 1) % e.frames.length;
+        sp.name = e.frames[e.frameIdx];
+      }
+      if (Math.abs(vel.dx) > 1) sp.flipX = vel.dx < 0;
     }
-    if (sp) sp.flipX = vel.dx < 0;
   }
+}
+
+// ================================================================
+// FOOTSTEP PARTICLES
+// ================================================================
+let _footTimer = 0;
+function sysFootsteps(delta) {
+  const vel = world.get(playerId, 'velocity');
+  const tf  = world.get(playerId, 'transform');
+  if (!vel || !tf) return;
+  if (vel.dx === 0 && vel.dy === 0) { _footTimer = 0; return; }
+  _footTimer += delta;
+  if (_footTimer >= 0.18) {
+    _footTimer = 0;
+    emitBurst(tf.x + 4, tf.y + 7, 'footstep');
+  }
+}
+
+// ================================================================
+// PORTAL SPARKLES
+// ================================================================
+let _portalTimer = 0;
+function sysPortalSparkles(delta) {
+  _portalTimer += delta;
+  if (_portalTimer < 0.12) return;
+  _portalTimer = 0;
+  const portals = _scenes[worldState.currentScene]?.portals ?? [];
+  for (const p of portals) {
+    emitBurst(p.tileX * TILE_SIZE + 4, p.tileY * TILE_SIZE + 4, 'sparkle');
+  }
+}
+
+// ================================================================
+// ITEM USE HANDLERS
+// ================================================================
+function registerAllItemUseHandlers() {
+  hud.registerItemUse('key_item', () => {
+    showNote('USE THE KEY NEAR A LOCKED DOOR');
+    return false;
+  });
+  hud.registerItemUse('bomb_item', (slot) => {
+    const ptf = world.get(playerId, 'transform');
+    if (!ptf) return;
+    sound.playSFX('bomb');
+    emitBurst(ptf.x + 4, ptf.y + 4, 'hit');
+    emitBurst(ptf.x + 4, ptf.y + 4, 'smoke');
+    showNote('BOOM!');
+    hud.clearItem(slot);
+    hud.selectedSlot = null;
+    return false;
+  });
+  hud.registerItemUse('potion_item', (slot) => {
+    if (hud.hp >= hud.maxHp) { showNote('ALREADY AT FULL HP'); return false; }
+    hud.addHp(4);
+    sound.playSFX('potion');
+    const ptf = world.get(playerId, 'transform');
+    if (ptf) emitBurst(ptf.x + 4, ptf.y + 4, 'sparkle');
+    showNote('+4 HP!');
+    hud.clearItem(slot);
+    hud.selectedSlot = null;
+    return false;
+  });
+  hud.registerItemUse('sword_item', () => {
+    showNote('IRON SWORD — PRESS X TO ATTACK');
+    return false;
+  });
+  hud.registerItemUse('bow_item', () => {
+    showNote('BOW — PRESS X TO FIRE');
+    return false;
+  });
+  hud.registerItemUse('axe_item', () => {
+    showNote('WAR AXE — PRESS X TO SWING');
+    return false;
+  });
+  hud.registerItemUse('shield_item', () => {
+    showNote('SHIELD IS PASSIVE — REDUCES DAMAGE');
+    return false;
+  });
 }
 
 // ================================================================
@@ -1038,44 +905,69 @@ function sysEnemyAI(delta) {
 // ================================================================
 const VILLAGER_BRANCHES = [
   {
-    requires: ['rewarded'],
-    lines: ['THANK YOU FOR CLEARING\nTHE CAVE OF EVIL!',
-            'THE VILLAGE SLEEPS\nSAFELY ONCE AGAIN.'],
+    requires: ['foundCrystal'],
+    lines: [
+      'YOU FOUND THE CRYSTAL!\nTHIS CALLS FOR A\nCELEBRATION!',
+      'TAKE THIS AS THANKS\nFOR YOUR BRAVERY.',
+    ],
+    setFlags:   ['rewarded'],
+    clearFlags: ['foundCrystal'],
+    addCoins:   5,
+    emit:       { x: 12*8+4, y: 12*8+4, preset: 'levelup' },
   },
   {
-    requires: ['foundCrystal'],
-    excludes: ['rewarded'],
-    lines: ['YOU FOUND THE CRYSTAL!',
-            'TAKE THIS REWARD FOR\nYOUR BRAVERY.'],
-    setFlags:  ['rewarded'],
-    addCoins: 5,
+    requires: ['enteredCave', 'hasKey'],
+    excludes: ['foundCrystal'],
+    lines: [
+      'A KEY FROM THE CAVE!\nYOU ARE BRAVER THAN\nI THOUGHT.',
+      'THE CRYSTAL CHAMBER\nLIES DEEP WITHIN.\nGOOD LUCK!',
+    ],
   },
   {
     requires: ['enteredCave'],
-    excludes: ['foundCrystal'],
-    lines: ['GOOD LUCK IN THERE.\nBEWARE THE DARKNESS.'],
+    excludes: ['hasKey', 'foundCrystal'],
+    lines: [
+      'SO YOU ENTERED THE\nCRYSTAL CAVE.',
+      'DID YOU FIND ANYTHING\nINSIDE? I HEAR THERE\nIS A HIDDEN KEY...',
+    ],
   },
   {
-    lines: ['THE CAVE TO THE EAST\nIS FULL OF MONSTERS.',
-            'ONLY A HERO CAN\nCLEAR IT FOR US.'],
+    excludes: ['metVillager'],
+    lines: [
+      'GREETINGS, TRAVELER!\nWELCOME TO OUR VILLAGE.',
+      'THE CRYSTAL CAVE LIES\nTO THE EAST. A GLOWING\nPORTAL MARKS THE WAY.',
+      'FEW WHO ENTER RETURN\nTO TELL THE TALE.\nTAKE THIS FOR LUCK.',
+    ],
+    setFlags: ['metVillager'],
+    addCoins: 3,
+    runScript: [{ cmd:'sfx', name:'coin' }],
+  },
+  {
+    lines: ['BE CAREFUL OUT THERE.\nAND KEEP AN EYE ON\nTHAT CAVE PORTAL.'],
   },
 ];
 
+// ================================================================
+// CAVE ENTRY CUTSCENE
+// ================================================================
 function buildCaveEntryCutscene(sageId) {
   return [
-    { cmd: 'lockInput', value: true },
-    { cmd: 'move', entityId: sageId,
-      targetX: 4 * TILE_SIZE, targetY: 8 * TILE_SIZE, speed: 28 },
-    { cmd: 'dialog', name: 'CAVE SAGE', lines: [
-        'STOP RIGHT THERE.',
+    { cmd:'lockInput', value: true },
+    { cmd:'wait', seconds: 0.4 },
+    { cmd:'move', id: sageId, tx: 5, ty: 8, speed: 35 },
+    { cmd:'sfx',  name: 'portal' },
+    { cmd:'dialog', name: 'CAVE SAGE',
+      lines: [
+        'WAIT! STOP RIGHT THERE.',
         'YOU ARE THE FIRST TO\nENTER IN MANY YEARS.',
         'TAKE THIS HEART. YOU\nWILL NEED IT AHEAD.',
         'BEWARE: SLIMES LURK\nIN THE DARK. PRESS X\nTO SWING YOUR SWORD.',
         'STAIRS LEAD DEEPER.\nEACH LEVEL IS MORE\nDANGEROUS THAN THE LAST.',
-    ]},
-    { cmd: 'flag',  name: 'enteredCave' },
-    { cmd: 'call',  fn: () => { hud.addHp(2); sound.playSFX('heal'); emitBurst(4*8+4, 8*8+4, 'sparkle'); } },
-    { cmd: 'lockInput', value: false },
+      ],
+    },
+    { cmd:'flag',  name: 'enteredCave' },
+    { cmd:'call',  fn: () => { hud.addHp(2); sound.playSFX('heal'); emitBurst(4*8+4, 8*8+4, 'sparkle'); } },
+    { cmd:'lockInput', value: false },
   ];
 }
 
@@ -1087,21 +979,27 @@ function buildOverworld(cols, rows) {
   const obj = Array.from({length: rows}, () => Array(cols).fill(null));
   const col = Array.from({length: rows}, () => Array(cols).fill(false));
 
+  // Water lake
   for (let r = 4; r <= 6; r++)
     for (let c = 5; c <= 9; c++) { bg[r][c] = 'water'; col[r][c] = true; }
+  // Stone ruins
   for (let r = 9; r <= 11; r++)
     for (let c = 6; c <= 10; c++) bg[r][c] = 'stone';
+  // Walled village
   for (let r = 20; r <= 25; r++)
     for (let c = 15; c <= 22; c++)
       if (r === 20 || r === 25 || c === 15 || c === 22)
         { obj[r][c] = 'wall'; col[r][c] = true; }
+  // Trees
   [[1,1],[1,4],[2,8],[3,18],[6,14],[0,12],[9,25],[11,28],[16,5],[13,8],[22,2],[24,6],
    [5,32],[12,38],[20,30],[28,5],[30,12],[32,20],[25,35]].forEach(([r,c]) => {
     if (r < rows && c < cols) { obj[r][c] = 'tree'; col[r][c] = true; }
   });
+  // Flowers
   [[3,3],[4,12],[7,3],[8,18],[13,7],[19,12],[22,28],[28,15]].forEach(([r,c]) => {
     if (r < rows && c < cols) obj[r][c] = 'flower';
   });
+
   obj[8][35] = 'portal';
   return { bg, objects: obj, collision: col };
 }
@@ -1115,17 +1013,22 @@ function buildCaveL1(cols, rows) {
     Array.from({length: cols}, (_, c) =>
       r === 0 || r === rows-1 || c === 0 || c === cols-1));
 
+  // Inner room walls
   for (let r = 4; r <= 12; r++)
     for (let c = 5; c <= 14; c++)
       if ((r === 4 || r === 12 || c === 5 || c === 14) &&
           !(r === 8 && (c === 5 || c === 14)))
         { bg[r][c] = 'cave_wall'; col[r][c] = true; }
 
+  // Crystals
   [[2,5],[2,10],[2,16],[16,3],[16,10],[16,16],[6,8],[9,11],[7,2],[14,17]].forEach(([r,c]) => {
     if (r < rows && c < cols && !col[r][c]) obj[r][c] = 'crystal';
   });
 
+  // Staircase down to B2
   obj[15][17] = 'stairs_down';
+
+  // Portal back to overworld
   obj[8][1]  = 'portal'; col[8][1] = false;
   bg[8][0]   = 'cave_floor'; col[8][0] = false;
   return { bg, objects: obj, collision: col };
@@ -1140,9 +1043,11 @@ function buildCaveL2(cols, rows) {
     Array.from({length: cols}, (_, c) =>
       r === 0 || r === rows-1 || c === 0 || c === cols-1));
 
+  // Pillar columns
   [[3,4],[3,10],[3,16],[8,7],[8,13],[14,4],[14,10],[14,16]].forEach(([r,c]) => {
     if (r < rows && c < cols) { bg[r][c] = 'cave_wall'; col[r][c] = true; }
   });
+  // Corridor walls splitting the room
   for (let c = 4; c <= 16; c++)
     if (c !== 7 && c !== 13)
       { bg[6][c] = 'cave_wall'; col[6][c] = true; }
@@ -1150,12 +1055,15 @@ function buildCaveL2(cols, rows) {
     if (c !== 7 && c !== 13)
       { bg[11][c] = 'cave_wall'; col[11][c] = true; }
 
+  // Crystals decorating walls
   [[2,2],[2,8],[2,14],[16,2],[16,8],[16,14],[5,2],[5,17],[9,2],[9,17]].forEach(([r,c]) => {
     if (r < rows && c < cols && !col[r][c]) obj[r][c] = 'crystal';
   });
 
+  // Stairs up (to cave L1) and down (to cave L3)
   obj[15][2] = 'stairs_up';
   obj[2][17] = 'stairs_down';
+
   return { bg, objects: obj, collision: col };
 }
 
@@ -1168,7 +1076,8 @@ function buildCaveL3(cols, rows) {
     Array.from({length: cols}, (_, c) =>
       r === 0 || r === rows-1 || c === 0 || c === cols-1));
 
-  for (let r = 4; r <= 12; r++) {
+  // Boss chamber walls — cross pattern
+  for (let r = 5; r <= 12; r++) {
     bg[r][5]  = 'cave_wall'; col[r][5]  = true;
     bg[r][14] = 'cave_wall'; col[r][14] = true;
   }
@@ -1176,49 +1085,18 @@ function buildCaveL3(cols, rows) {
     bg[5][c]  = 'cave_wall'; col[5][c]  = true;
     bg[12][c] = 'cave_wall'; col[12][c] = true;
   }
+  // Chamber door openings
   col[8][5]  = false; bg[8][5]  = 'cave_floor_b3';
   col[8][14] = false; bg[8][14] = 'cave_floor_b3';
   col[5][9]  = false; bg[5][9]  = 'cave_floor_b3';
   col[12][9] = false; bg[12][9] = 'cave_floor_b3';
 
+  // Crystals
   [[2,2],[2,8],[2,17],[16,2],[16,8],[16,17],[3,12],[15,12]].forEach(([r,c]) => {
     if (r < rows && c < cols && !col[r][c]) obj[r][c] = 'crystal';
   });
 
-  obj[15][17] = 'stairs_up';
-  obj[15][2]  = 'stairs_down';   // ← NEW: descend to B4 boss floor
-
-  return { bg, objects: obj, collision: col };
-}
-
-// ---- NEW: Boss floor — cave B4 ----
-function buildCaveL4(cols, rows) {
-  const bg  = Array.from({length: rows}, (_, r) =>
-    Array.from({length: cols}, (_, c) =>
-      (r === 0 || r === rows-1 || c === 0 || c === cols-1) ? 'cave_wall' : 'cave_floor_b4'));
-  const obj = Array.from({length: rows}, () => Array(cols).fill(null));
-  const col = Array.from({length: rows}, (_, r) =>
-    Array.from({length: cols}, (_, c) =>
-      r === 0 || r === rows-1 || c === 0 || c === cols-1));
-
-  // Sealed boss chamber — outer ring of walls
-  for (let r = 3; r <= 14; r++) {
-    bg[r][3]  = 'cave_wall'; col[r][3]  = true;
-    bg[r][16] = 'cave_wall'; col[r][16] = true;
-  }
-  for (let c = 3; c <= 16; c++) {
-    bg[3][c]  = 'cave_wall'; col[3][c]  = true;
-    bg[14][c] = 'cave_wall'; col[14][c] = true;
-  }
-  // Chamber doorway (locked until boss dead via portal guard)
-  col[8][3] = false; bg[8][3] = 'cave_floor_b4';
-
-  // Dark crystals around the chamber interior
-  [[5,5],[5,14],[11,5],[11,14],[8,5],[8,14],[5,9],[11,9]].forEach(([r,c]) => {
-    if (!col[r][c]) obj[r][c] = 'crystal';
-  });
-
-  // Stairs back up to B3 — outside the chamber
+  // Stairs up to cave B2
   obj[15][17] = 'stairs_up';
 
   return { bg, objects: obj, collision: col };
@@ -1234,7 +1112,6 @@ const { bg: owBg,  objects: owObj,  collision: owCol  } = buildOverworld(OW_COLS
 const { bg: c1Bg,  objects: c1Obj,  collision: c1Col  } = buildCaveL1(CAVE_COLS, CAVE_ROWS);
 const { bg: c2Bg,  objects: c2Obj,  collision: c2Col  } = buildCaveL2(CAVE_COLS, CAVE_ROWS);
 const { bg: c3Bg,  objects: c3Obj,  collision: c3Col  } = buildCaveL3(CAVE_COLS, CAVE_ROWS);
-const { bg: c4Bg,  objects: c4Obj,  collision: c4Col  } = buildCaveL4(CAVE_COLS, CAVE_ROWS);
 
 // ================================================================
 // SCENES
@@ -1249,6 +1126,7 @@ const SCENE_DATA = {
       { tileX: 35, tileY: 8, targetScene: 'cave', targetTileX: 3, targetTileY: 8 },
     ],
     chests: [
+      // Original chests
       {
         tileX: 14, tileY: 20, flagName: 'chest_ow_bomb',
         loot: [{
@@ -1264,28 +1142,60 @@ const SCENE_DATA = {
         tileX: 9, tileY: 10, flagName: 'chest_ow_potion',
         loot: [{
           sprite: 'potion_item',
-          label: 'POTION OBTAINED!',
+          label: 'POTION OBTAINED! [Z: use to restore HP]',
           onPickup() {
             const slot = hud.items.indexOf(null);
             if (slot >= 0) { hud.setItem(slot, 'potion_item'); hud.selectedSlot = slot; }
-            showNote('POTION! USE WITH Z.');
           },
         }],
       },
+      // === NEW WEAPON CHESTS ===
+      // Sword — east plains, near portal
       {
-        tileX: 34, tileY: 8, flagName: 'chest_ow_axe',
+        tileX: 30, tileY: 15, flagName: 'chest_ow_sword',
+        loot: [{
+          sprite: 'sword_item',
+          label: 'IRON SWORD! [Select + X to attack]',
+          onPickup() {
+            sound.playSFX('weapon_get');
+            emitBurst(30*8+4, 15*8+4, 'levelup');
+            const slot = hud.items.indexOf(null);
+            if (slot >= 0) { hud.setItem(slot, 'sword_item'); hud.selectedSlot = slot; }
+            showNote('IRON SWORD — STRONGER ATTACKS!');
+          },
+        }],
+      },
+      // Bow — southwest open plains
+      {
+        tileX: 6, tileY: 28, flagName: 'chest_ow_bow',
+        loot: [{
+          sprite: 'bow_item',
+          label: 'BOW OBTAINED! [Select + X to fire arrow]',
+          onPickup() {
+            sound.playSFX('weapon_get');
+            emitBurst(6*8+4, 28*8+4, 'levelup');
+            const slot = hud.items.indexOf(null);
+            if (slot >= 0) { hud.setItem(slot, 'bow_item'); hud.selectedSlot = slot; }
+            showNote('BOW — RANGED ATTACKS!');
+          },
+        }],
+      },
+      // War Axe — far east, near cave
+      {
+        tileX: 34, tileY: 26, flagName: 'chest_ow_axe',
         loot: [{
           sprite: 'axe_item',
           label: 'WAR AXE OBTAINED! [Heavy melee]',
           onPickup() {
             sound.playSFX('weapon_get');
-            emitBurst(34*8+4, 8*8+4, 'levelup');
+            emitBurst(34*8+4, 26*8+4, 'levelup');
             const slot = hud.items.indexOf(null);
             if (slot >= 0) { hud.setItem(slot, 'axe_item'); hud.selectedSlot = slot; }
             showNote('WAR AXE — MASSIVE DAMAGE!');
           },
         }],
       },
+      // Shield — north of village
       {
         tileX: 18, tileY: 18, flagName: 'chest_ow_shield',
         loot: [{
@@ -1321,11 +1231,6 @@ const SCENE_DATA = {
             lines: ['LOOKS LIKE THE VILLAGER\nWAS PLEASED WITH YOUR\nADVENTURE. WELL DONE!'],
           },
           {
-            requires: ['boss_dead'],
-            excludes: ['rewarded'],
-            lines: ['THE VOID LORD IS SLAIN!\nLEGEND WILL REMEMBER\nYOUR NAME.'],
-          },
-          {
             requires: ['hasKey'],
             excludes: ['rewarded'],
             lines: ['THAT KEY YOU CARRY...\nIT OPENS THE CRYSTAL\nCHAMBER DEEP INSIDE!'],
@@ -1347,6 +1252,7 @@ const SCENE_DATA = {
       spawnPickupFlagged(10*8,  8*8, 'coin',  'coinOW1');
       spawnPickupFlagged(18*8, 20*8, 'coin',  'coinOW2');
       spawnPickupFlagged(25*8,  6*8, 'heart', 'heartOW');
+      // Extra coins scattered around overworld
       spawnPickupFlagged(32*8,  3*8, 'coin',  'coinOW3');
       spawnPickupFlagged( 3*8, 22*8, 'coin',  'coinOW4');
       spawnPickupFlagged(22*8, 30*8, 'coin',  'coinOW5');
@@ -1419,6 +1325,7 @@ const SCENE_DATA = {
       spawnPickupFlagged(13*8, 8*8, 'coin',  'crystalCave');
       spawnPickupFlagged( 8*8,14*8, 'heart', 'heartCave');
 
+      // Spawn slimes
       if (!getFlag('cave_cleared')) {
         spawnEnemy('slime',  7,  3);
         spawnEnemy('slime', 16,  5);
@@ -1436,7 +1343,7 @@ const SCENE_DATA = {
     },
   }))(),
 
-  // ---- Cave Level 2 (bats — shared aggro group) ----
+  // ---- Cave Level 2 (bats) ----
   cave_b2: (() => ({
     worldCols: CAVE_COLS, worldRows: CAVE_ROWS, bgColor: 30,
     playerStart: { tileX: 3, tileY: 8 },
@@ -1481,23 +1388,20 @@ const SCENE_DATA = {
       spawnPickupFlagged(14*8, 3*8, 'coin',  'coinB2b');
       spawnPickupFlagged( 2*8, 8*8, 'heart', 'heartB2');
 
-      // Clear any stale aggro from a prior visit
-      clearAggroGroup('cave_b2_bats');
-
-      // All four bats share one aggro group — spotting any one alerts all
-      spawnEnemy('bat',  5,  3, { aggroGroup: 'cave_b2_bats' });
-      spawnEnemy('bat', 14,  8, { aggroGroup: 'cave_b2_bats' });
-      spawnEnemy('bat',  8, 14, { aggroGroup: 'cave_b2_bats' });
-      spawnEnemy('bat', 16,  3, { aggroGroup: 'cave_b2_bats' });
+      // Spawn bats — faster, more aggressive
+      spawnEnemy('bat',  5,  3);
+      spawnEnemy('bat', 14,  8);
+      spawnEnemy('bat',  8, 14);
+      spawnEnemy('bat', 16,  3);
 
       if (!getFlag('sawB2Warning')) {
         setFlag('sawB2Warning');
-        showNote('B2 — BATS HUNT IN PACKS!\nALERTING ONE ALERTS ALL.', 3.0);
+        showNote('B2 — BATS AHEAD! STAY ALERT.', 3.0);
       }
     },
   }))(),
 
-  // ---- Cave Level 3 (skeleton spawner) ----
+  // ---- Cave Level 3 (skeletons — boss floor) ----
   cave_b3: (() => ({
     worldCols: CAVE_COLS, worldRows: CAVE_ROWS, bgColor: 14,
     playerStart: { tileX: 3, tileY: 8 },
@@ -1506,10 +1410,9 @@ const SCENE_DATA = {
     portals: [
       { tileX: 16, tileY: 15, targetScene: 'cave_b2', targetTileX: 16, targetTileY: 2,
         onActivate() { sound.playSFX('stairs'); showNote('ASCENDING TO B2...'); } },
-      { tileX: 2,  tileY: 15, targetScene: 'cave_b4', targetTileX: 3,  targetTileY: 8,
-        onActivate() { sound.playSFX('stairs'); showNote('DESCENDING TO B4 — THE VOID...'); } },
     ],
     chests: [
+      // Treasure chest at the boss chamber centre
       {
         tileX: 9, tileY: 8, flagName: 'chest_b3_treasure',
         loot: [
@@ -1542,671 +1445,99 @@ const SCENE_DATA = {
       spawnPickupFlagged(17*8,  2*8, 'coin',  'coinB3b');
       spawnPickupFlagged( 2*8, 16*8, 'coin',  'coinB3c');
 
-      // No pre-placed enemies — the spawner handles all skeletons
-      resetB3Spawner();
-      b3SpawnerActive = true;
-      // First wave immediately
+      // Spawn skeletons — slow, tanky, high damage
       spawnEnemy('skeleton',  2,  3);
       spawnEnemy('skeleton', 17,  3);
-      emitBurst(2*8+4, 3*8+4, 'portal');
-      emitBurst(17*8+4, 3*8+4, 'portal');
+      spawnEnemy('skeleton',  2, 12);
+      spawnEnemy('skeleton', 10,  3);
+      spawnEnemy('skeleton', 10, 13);  // guards the treasure
 
       if (!getFlag('sawB3Warning')) {
         setFlag('sawB3Warning');
-        showNote('B3 — ENDLESS SKELETONS RISE.\nSTAIRS DOWN LEAD TO SOMETHING WORSE.', 3.5);
+        showNote('B3 — THE DEEP. SKELETONS GUARD\nANCIENT TREASURE.', 3.5);
       }
-    },
-    onExit() {
-      b3SpawnerActive = false;
-    },
-  }))(),
-
-  // ---- Cave Level 4 — Boss Floor ----
-  cave_b4: (() => ({
-    worldCols: CAVE_COLS, worldRows: CAVE_ROWS, bgColor: 14,
-    playerStart: { tileX: 3, tileY: 8 },
-    music: 'cave_deep',
-    layerBG: c4Bg, layerObjects: c4Obj, layerCollision: c4Col,
-    portals: [
-      { tileX: 17, tileY: 15, targetScene: 'cave_b3', targetTileX: 2, targetTileY: 14,
-        onActivate() { sound.playSFX('stairs'); showNote('ASCENDING TO B3...'); } },
-    ],
-    chests: [],
-    npcs: [],
-    onEnter() {
-      spawnPickupFlagged( 1*8,  2*8, 'coin',  'coinB4a');
-      spawnPickupFlagged(18*8,  2*8, 'heart', 'heartB4');
-
-      // Reset boss state on each entry (unless already dead)
-      bossActive = false;
-      bossId     = -1;
-      bossPhase  = 0;
-
-      if (getFlag('boss_dead')) {
-        showNote('THE VOID LORD LIES DEFEATED.\nPEACE RETURNS TO THE DEEP.', 3.0);
-        return;
-      }
-
-      // Boss intro cutscene fires on first entry
-      setTimeout(() => {
-        cutscene.run([
-          { cmd: 'lockInput', value: true },
-          { cmd: 'wait', seconds: 0.4 },
-          { cmd: 'note', text: 'YOU FEEL AN ANCIENT DREAD...' },
-          { cmd: 'wait', seconds: 1.2 },
-          // Boss materialises with particle burst
-          { cmd: 'call', fn() {
-              spawnBoss();
-              emitBurst(9 * TILE_SIZE + 4, 8 * TILE_SIZE + 4, 'portal');
-              emitBurst(9 * TILE_SIZE + 4, 8 * TILE_SIZE + 4, 'levelup');
-          }},
-          { cmd: 'wait', seconds: 0.6 },
-          { cmd: 'bgm', name: 'boss_battle' },
-          { cmd: 'dialog', name: 'VOID LORD', lines: [
-              'SO. A MORTAL DARES\nENTER MY SANCTUM.',
-              'YOU HAVE FOUGHT WELL\nTO REACH THIS PLACE.',
-              'BUT YOUR JOURNEY ENDS\nHERE, IN DARKNESS.',
-              'I WILL CONSUME YOUR\nSOUL AND ADD IT TO\nMY ENDLESS VOID.',
-              'FACE ME — AND DESPAIR.',
-          ]},
-          { cmd: 'wait', seconds: 0.3 },
-          { cmd: 'lockInput', value: false },
-        ]);
-      }, 80);
     },
   }))(),
 };
 
-// ================================================================
-// PICKUP FLAGS HELPER
-// ================================================================
-function spawnPickupFlagged(wx, wy, type, flagName) {
-  if (getFlag(flagName)) return;
-  const id = world.createEntity({
-    transform: { x: wx, y: wy },
-    sprite:    { name: type + '_item', flipX: false },
-    pickup:    { type, collected: false },
-    pickupFlag: { name: flagName },
-  });
-  return id;
-}
+registerScenes(SCENE_DATA);
+setSaveKey('pixelCanvas_zelda_v51_enhanced');
 
 // ================================================================
-// PLAYER STATE
+// QUEST WATCHERS
 // ================================================================
-let playerId = -1;
-const playerFacing = { dx: 0, dy: 1 };
-let attackCooldown = 0;
-const ATTACK_CD_MAX = 0.35;
-
-// ================================================================
-// SCENE LOADING
-// ================================================================
-const worldState = {
-  currentScene: '',
-  w: 0, h: 0,
-  layerBG: [], layerObjects: [], layerCollision: [],
-};
-
-function loadScene(name, tileX, tileY) {
-  const def = SCENE_DATA[name];
-  if (!def) return;
-
-  // Deactivate spawners from previous scene
-  b3SpawnerActive = false;
-  if (worldState.currentScene === 'cave_b4') {
-    bossActive = false;
+onFlags(['hasKey', 'enteredCave'], () => {
+  if (!getFlag('foundCrystal')) {
+    setFlag('foundCrystal');
+    showNote('YOU FOUND THE CRYSTAL!');
+    sound.playSFX('confirm');
+    emitBurst(13*8+4, 8*8+4, 'levelup');
   }
-
-  // Clear all non-persistent entities
-  for (const id of [...world.allIds])
-    if (!world.has(id, 'persistent')) world.destroyEntity(id);
-
-  worldState.currentScene  = name;
-  worldState.w             = def.worldCols * TILE_SIZE;
-  worldState.h             = def.worldRows * TILE_SIZE;
-  worldState.layerBG       = def.layerBG;
-  worldState.layerObjects  = def.layerObjects;
-  worldState.layerCollision = def.layerCollision;
-
-  // Register collision layer for LOS / movement
-  setCollisionLayer(def.layerCollision, def.worldCols, def.worldRows);
-
-  // Spawn player
-  const start = def.playerStart;
-  const sx = tileX !== undefined ? tileX * TILE_SIZE : start.tileX * TILE_SIZE;
-  const sy = tileY !== undefined ? tileY * TILE_SIZE : start.tileY * TILE_SIZE;
-
-  playerId = world.createEntity({
-    transform: { x: sx, y: sy },
-    sprite:    { name: 'player_idle', flipX: false },
-    velocity:  { dx: 0, dy: 0, speed: 60 },
-    collider:  true,
-    player:    { animTimer: 0, frameIdx: 0, moving: false },
-    damageable: {
-      hp: hud.hp, maxHp: hud.maxHp,
-      iframes: 0, iframeMax: 0.8,
-      team: 'player',
-      onHit(vid) { sound.playSFX('hurt'); emitBurst(sx, sy, 'hit'); },
-    },
-    persistent: true,
-  });
-
-  // Spawn portals
-  for (const p of (def.portals || [])) {
-    world.createEntity({
-      transform: { x: p.tileX * TILE_SIZE, y: p.tileY * TILE_SIZE },
-      portal: { ...p },
-    });
-  }
-
-  // Spawn chests
-  for (const c of (def.chests || [])) {
-    if (!getFlag(c.flagName)) {
-      world.createEntity({
-        transform: { x: c.tileX * TILE_SIZE, y: c.tileY * TILE_SIZE },
-        sprite:    { name: 'wall', flipX: false },
-        chest:     { flagName: c.flagName, loot: c.loot, open: false },
-        collider:  true,
-      });
-    }
-  }
-
-  // Spawn NPCs
-  for (const n of (def.npcs || [])) {
-    world.createEntity({
-      transform: { x: n.tileX * TILE_SIZE, y: n.tileY * TILE_SIZE },
-      sprite:    { name: n.sprite, flipX: false },
-      velocity:  { dx: 0, dy: 0, speed: n.patrol?.speed ?? 0 },
-      collider:  true,
-      npcData:   { name: n.name, dialog: n.dialog, branches: n.dialogBranches ?? [] },
-      patrol:    n.patrol ?? null,
-    });
-  }
-
-  sound.playBGM(def.music);
-  def.onEnter?.();
-}
-
-// ================================================================
-// INPUT
-// ================================================================
-const keys = {};
-window.addEventListener('keydown', e => { keys[e.code] = true;  });
-window.addEventListener('keyup',   e => { keys[e.code] = false; });
-
-const input = {
-  update() {
-    this.left  = !!(keys['KeyA'] || keys['ArrowLeft']);
-    this.right = !!(keys['KeyD'] || keys['ArrowRight']);
-    this.up    = !!(keys['KeyW'] || keys['ArrowUp']);
-    this.down  = !!(keys['KeyS'] || keys['ArrowDown']);
-    this.attack = !!keys['KeyX'];
-    this.action = !!keys['KeyZ'];
-  },
-  left:false, right:false, up:false, down:false, attack:false, action:false,
-};
-
-let _actionHeld = false;
-let _attackHeld = false;
-
-function sysInput() {
-  const ptf = world.get(playerId, 'transform');
-  const vel = world.get(playerId, 'velocity');
-  const pl  = world.get(playerId, 'player');
-  if (!ptf || !vel || !pl || cutscene.isInputLocked()) {
-    if (vel) { vel.dx = 0; vel.dy = 0; }
-    return;
-  }
-
-  let dx = 0, dy = 0;
-  if (input.left)  dx -= 1;
-  if (input.right) dx += 1;
-  if (input.up)    dy -= 1;
-  if (input.down)  dy += 1;
-
-  if (dx !== 0 && dy !== 0) { dx *= 0.707; dy *= 0.707; }
-  vel.dx = dx * vel.speed;
-  vel.dy = dy * vel.speed;
-  pl.moving = dx !== 0 || dy !== 0;
-}
-
-function sysTrackFacing() {
-  const vel = world.get(playerId, 'velocity');
-  if (!vel) return;
-  if (Math.abs(vel.dx) > Math.abs(vel.dy)) {
-    playerFacing.dx = vel.dx > 0 ? 1 : -1;
-    playerFacing.dy = 0;
-  } else if (vel.dy !== 0) {
-    playerFacing.dx = 0;
-    playerFacing.dy = vel.dy > 0 ? 1 : -1;
-  }
-}
-
-// ================================================================
-// PLAYER ANIMATION
-// ================================================================
-function sysPlayerAnim(delta) {
-  const pl = world.get(playerId, 'player');
-  const sp = world.get(playerId, 'sprite');
-  const vel = world.get(playerId, 'velocity');
-  if (!pl || !sp || !vel) return;
-
-  if (!pl.moving) { sp.name = 'player_idle'; return; }
-
-  pl.animTimer += delta;
-  if (pl.animTimer >= 0.15) {
-    pl.animTimer = 0;
-    pl.frameIdx  = (pl.frameIdx + 1) % 2;
-  }
-
-  const idx = pl.frameIdx;
-  if (playerFacing.dx !== 0) {
-    sp.name  = idx === 0 ? 'player_s0' : 'player_s1';
-    sp.flipX = playerFacing.dx < 0;
-  } else if (playerFacing.dy < 0) {
-    sp.name  = idx === 0 ? 'player_u0' : 'player_u1';
-    sp.flipX = false;
-  } else {
-    sp.name  = idx === 0 ? 'player_d0' : 'player_d1';
-    sp.flipX = false;
-  }
-}
-
-// ================================================================
-// ATTACK SYSTEM
-// ================================================================
-function sysPlayerAttack(delta) {
-  attackCooldown = Math.max(0, attackCooldown - delta);
-  if (!input.attack || attackCooldown > 0 || cutscene.isInputLocked()) return;
-
-  const ptf = world.get(playerId, 'transform');
-  if (!ptf) return;
-
-  attackCooldown = ATTACK_CD_MAX;
-  sound.playSFX('sword_swing');
-
-  const ax = ptf.x + playerFacing.dx * TILE_SIZE;
-  const ay = ptf.y + playerFacing.dy * TILE_SIZE;
-
-  // Spawn a swing hitbox entity
-  const swingId = world.createEntity({
-    transform: { x: ax, y: ay },
-    sprite:    { name: 'sword_swing', flipX: playerFacing.dx < 0 },
-    swing:     { lifetime: 0.12, team: 'player', damage: 1, knockback: 50 },
-    damager:   { damage: 1, team: 'player', knockback: 50 },
-  });
-  setTimeout(() => { if (world.has(swingId, 'swing')) world.destroyEntity(swingId); }, 130);
-}
-
-// ================================================================
-// MOVEMENT + COLLISION
-// ================================================================
-function sysMovement(delta) {
-  for (const id of world.query('transform', 'velocity')) {
-    const tf  = world.get(id, 'transform');
-    const vel = world.get(id, 'velocity');
-    if (!tf || !vel) continue;
-
-    const nx = tf.x + vel.dx * delta;
-    const ny = tf.y + vel.dy * delta;
-
-    const solX = isSolid(nx, tf.y, worldState.layerCollision, worldState.w / TILE_SIZE);
-    const solY = isSolid(tf.x, ny, worldState.layerCollision, worldState.w / TILE_SIZE);
-
-    tf.x = solX ? tf.x : nx;
-    tf.y = solY ? tf.y : ny;
-
-    // Clamp to world bounds
-    tf.x = Math.max(0, Math.min(worldState.w - TILE_SIZE, tf.x));
-    tf.y = Math.max(0, Math.min(worldState.h - TILE_SIZE, tf.y));
-  }
-}
-
-function isSolid(wx, wy, layer, cols) {
-  const tx = Math.floor(wx / TILE_SIZE);
-  const ty = Math.floor(wy / TILE_SIZE);
-  const rows = layer.length;
-  if (tx < 0 || ty < 0 || tx >= cols || ty >= rows) return true;
-  return layer[ty]?.[tx] === true;
-}
-
-// ================================================================
-// CAMERA
-// ================================================================
-function sysCamera() {
-  const ptf = world.get(playerId, 'transform');
-  if (ptf) camera.follow(ptf.x + 4, ptf.y + 4, worldState.w, worldState.h);
-}
-
-// ================================================================
-// PORTAL SYSTEM
-// ================================================================
-function sysPortalSparkles(delta) {
-  // Portal tiles emit sparkle particles periodically
-}
-
-function sysSceneTransition() {
-  const ptf = world.get(playerId, 'transform');
-  if (!ptf) return;
-
-  for (const id of world.query('portal')) {
-    const p  = world.get(id, 'portal');
-    const tf = world.get(id, 'transform');
-    if (!p || !tf) continue;
-    const dx = ptf.x - tf.x;
-    const dy = ptf.y - tf.y;
-    if (Math.abs(dx) < TILE_SIZE && Math.abs(dy) < TILE_SIZE) {
-      p.onActivate?.();
-      loadScene(p.targetScene, p.targetTileX, p.targetTileY);
-      return;
-    }
-  }
-}
-
-// ================================================================
-// DAMAGE SYSTEM
-// ================================================================
-function sysDamage(delta) {
-  // Tick iframes
-  for (const id of world.query('damageable')) {
-    const d = world.get(id, 'damageable');
-    if (d && d.iframes > 0) d.iframes = Math.max(0, d.iframes - delta);
-  }
-
-  // Damagers hit damageables of different team
-  for (const did of world.query('damager', 'transform')) {
-    const dmgr = world.get(did, 'damager');
-    const dtf  = world.get(did, 'transform');
-    if (!dmgr || !dtf) continue;
-
-    for (const tid of world.query('damageable', 'transform')) {
-      if (tid === did) continue;
-      const dmgb = world.get(tid, 'damageable');
-      const ttf  = world.get(tid, 'transform');
-      if (!dmgb || !ttf) continue;
-      if (dmgr.team === dmgb.team) continue;
-      if (dmgb.iframes > 0) continue;
-
-      const dx = ttf.x - dtf.x;
-      const dy = ttf.y - dtf.y;
-      if (Math.abs(dx) > TILE_SIZE * 1.5 || Math.abs(dy) > TILE_SIZE * 1.5) continue;
-
-      // Hit
-      dmgb.hp -= dmgr.damage;
-      dmgb.iframes = dmgb.iframeMax;
-      dmgb.onHit?.(tid);
-
-      // Sync player hp to HUD
-      if (tid === playerId) hud.setHp(dmgb.hp);
-
-      if (dmgb.hp <= 0) {
-        dmgb.onDeath?.(tid);
-      }
-    }
-  }
-}
-
-// ================================================================
-// PICKUP SYSTEM
-// ================================================================
-function sysPickups() {
-  const ptf = world.get(playerId, 'transform');
-  if (!ptf) return;
-  for (const id of world.query('pickup', 'transform')) {
-    const p  = world.get(id, 'pickup');
-    const tf = world.get(id, 'transform');
-    if (!p || !tf || p.collected) continue;
-    const dx = ptf.x - tf.x;
-    const dy = ptf.y - tf.y;
-    if (Math.abs(dx) < TILE_SIZE * 1.2 && Math.abs(dy) < TILE_SIZE * 1.2) {
-      p.collected = true;
-      if (p.type === 'coin')  { hud.addCoins(1); sound.playSFX('coin'); }
-      if (p.type === 'heart') { hud.addHp(2);    sound.playSFX('heal'); }
-      world.destroyEntity(id);
-    }
-  }
-}
-
-function sysPickupFlags() {
-  for (const id of world.query('pickupFlag')) {
-    if (!world.has(id, 'pickup')) continue;
-    const p  = world.get(id, 'pickup');
-    const pf = world.get(id, 'pickupFlag');
-    if (p?.collected && pf) {
-      setFlag(pf.name);
-      world.destroyEntity(id);
-    }
-  }
-}
-
-// ================================================================
-// CHEST LOOT
-// ================================================================
-function sysChestLoot(delta) {
-  const ptf = world.get(playerId, 'transform');
-  if (!ptf) return;
-
-  for (const id of world.query('chest', 'transform')) {
-    const ch = world.get(id, 'chest');
-    const tf = world.get(id, 'transform');
-    if (!ch || !tf || ch.open) continue;
-
-    const dx = ptf.x - tf.x;
-    const dy = ptf.y - tf.y;
-    const near = Math.abs(dx) < TILE_SIZE * 1.5 && Math.abs(dy) < TILE_SIZE * 1.5;
-
-    if (near && input.action && !_actionHeld) {
-      _actionHeld = true;
-      ch.open = true;
-      setFlag(ch.flagName);
-      sound.playSFX('chest_open');
-      emitBurst(tf.x + 4, tf.y + 4, 'chest');
-      for (const item of (ch.loot || [])) {
-        item.onPickup?.();
-        if (item.label) showNote(item.label, 2.5);
-      }
-      world.destroyEntity(id);
-    }
-  }
-  if (!input.action) _actionHeld = false;
-}
-
-// ================================================================
-// NPC DIALOG SYSTEM  (simplified)
-// ================================================================
-let activeDialog = null;
-let dialogTimer  = 0;
-
-function sysDialog(elapsed) {
-  const ptf = world.get(playerId, 'transform');
-  if (!ptf) return;
-
-  if (activeDialog) return;  // don't open new dialogs while one is running
-
-  if (input.action && !_actionHeld) {
-    for (const id of world.query('npcData', 'transform')) {
-      const n  = world.get(id, 'npcData');
-      const tf = world.get(id, 'transform');
-      if (!n || !tf) continue;
-      const dx = ptf.x - tf.x;
-      const dy = ptf.y - tf.y;
-      if (Math.abs(dx) < TILE_SIZE * 2 && Math.abs(dy) < TILE_SIZE * 2) {
-        // Find matching branch
-        let lines = n.dialog;
-        for (const b of (n.branches || [])) {
-          const req = b.requires ?? [];
-          const exc = b.excludes ?? [];
-          if (req.every(f => getFlag(f)) && exc.every(f => !getFlag(f))) {
-            lines = b.lines;
-            if (b.setFlags)  b.setFlags.forEach(setFlag);
-            if (b.addCoins)  hud.addCoins(b.addCoins);
-            if (b.addHp)     hud.addHp(b.addHp);
-            break;
-          }
-        }
-        cutscene.run(lines.map(l => ({ cmd: 'dialog', name: n.name, lines: [l] })));
-        _actionHeld = true;
-        return;
-      }
-    }
-  }
-}
-
-// ================================================================
-// SPATIAL HASH + AI STUBS
-// ================================================================
-function sysSpatialHash() {}
-function sysAI(delta) {
-  // NPC patrol
-  for (const id of world.query('npcData', 'patrol', 'transform', 'velocity')) {
-    const pt = world.get(id, 'patrol');
-    const tf = world.get(id, 'transform');
-    const v  = world.get(id, 'velocity');
-    if (!pt || !tf || !v || !pt.waypoints?.length) continue;
-    const wp  = pt.waypoints[pt.waypointIdx];
-    const dx  = wp.x - tf.x;
-    const dy  = wp.y - tf.y;
-    const dist = Math.sqrt(dx*dx+dy*dy);
-    if (dist < 2) {
-      pt.waypointIdx = (pt.waypointIdx + 1) % pt.waypoints.length;
-      v.dx = 0; v.dy = 0;
-    } else {
-      v.dx = (dx/dist) * pt.speed;
-      v.dy = (dy/dist) * pt.speed;
-    }
-  }
-}
-
-// ================================================================
-// PROJECTILE SYSTEM
-// ================================================================
-function sysProjectile(delta) {
-  for (const id of world.query('projectile', 'transform', 'velocity')) {
-    const proj = world.get(id, 'projectile');
-    const tf   = world.get(id, 'transform');
-    const vel  = world.get(id, 'velocity');
-    if (!proj || !tf || !vel) continue;
-
-    proj.lifetime -= delta;
-    if (proj.lifetime <= 0) { world.destroyEntity(id); continue; }
-
-    // Check hit against player
-    const ptf = world.get(playerId, 'transform');
-    if (ptf) {
-      const dx = ptf.x - tf.x;
-      const dy = ptf.y - tf.y;
-      if (Math.abs(dx) < TILE_SIZE && Math.abs(dy) < TILE_SIZE) {
-        const d = world.get(playerId, 'damageable');
-        if (d && d.iframes <= 0 && proj.team !== 'player') {
-          d.hp -= proj.damage;
-          d.iframes = d.iframeMax;
-          hud.setHp(d.hp);
-          sound.playSFX('hurt');
-          emitBurst(ptf.x+4, ptf.y+4, 'hit');
-        }
-        world.destroyEntity(id);
-        continue;
-      }
-    }
-
-    // Destroy on solid collision
-    const cols = Math.floor(worldState.w / TILE_SIZE);
-    if (isSolid(tf.x, tf.y, worldState.layerCollision, cols)) {
-      world.destroyEntity(id);
-    }
-  }
-}
-
-// ================================================================
-// RENDER SYSTEM
-// ================================================================
-function sysRender() {
-  // Draw all entities with a sprite and transform
-  for (const id of world.query('transform', 'sprite')) {
-    const tf = world.get(id, 'transform');
-    const sp = world.get(id, 'sprite');
-    if (!tf || !sp || !spriteCache[sp.name]) continue;
-    const [sx, sy] = camera.toScreen(tf.x, tf.y);
-    if (sx < -TILE_SIZE*2 || sx > 180 || sy < -TILE_SIZE*2 || sy > 160) continue;
-    drawSprite(sp.name, sx | 0, sy | 0, sp.flipX);
-  }
-}
-
-// ================================================================
-// HUD — boss HP bar
-// ================================================================
-function renderBossBar() {
-  if (!bossActive || bossId < 0) return;
-  const dmg = world.get(bossId, 'damageable');
-  if (!dmg) return;
-
-  const BAR_W = 80, BAR_H = 4;
-  const bx    = (LOGICAL_W - BAR_W) / 2;
-  const by    = LOGICAL_H - 14;
-  const pct   = Math.max(0, dmg.hp / dmg.maxHp);
-
-  fillRectPx(bx - 1, by - 1, BAR_W + 2, BAR_H + 2, 0);
-  fillRectPx(bx, by, BAR_W, BAR_H, 23);
-  fillRectPx(bx, by, Math.round(BAR_W * pct), BAR_H,
-    bossPhase === 3 ? 31 : bossPhase === 2 ? 25 : 26);
-  drawText('VOID LORD', bx, by - 8, 20);
-}
-
-// ================================================================
-// FOOTSTEP + SAVE NOTE STUBS
-// ================================================================
-let _saveNoteText = '', _saveNoteTimer = 0;
-function showNote(txt, dur = 2.0) { _saveNoteText = txt; _saveNoteTimer = dur; }
-function renderSaveNote() {
-  if (_saveNoteTimer <= 0) return;
-  _saveNoteTimer -= 0.016;
-  drawText(_saveNoteText, 4, LOGICAL_H - 22, 20);
-}
-function sysFootsteps() {}
-
-// ================================================================
-// SAVE / LOAD
-// ================================================================
-const saveLoad = {
-  hasSave() { try { return !!localStorage.getItem('pxz_save'); } catch(e) { return false; } },
-  save() {
-    try {
-      const ptf = world.get(playerId, 'transform');
-      localStorage.setItem('pxz_save', JSON.stringify({
-        scene: worldState.currentScene,
-        px: ptf?.x, py: ptf?.y,
-        hp: hud.hp, maxHp: hud.maxHp, coins: hud.coins,
-        items: hud.items,
-        flags: [...flags],
-      }));
-      return true;
-    } catch(e) { return false; }
-  },
-  load() {
-    try {
-      const d = JSON.parse(localStorage.getItem('pxz_save'));
-      if (!d) return false;
-      hud.setMaxHp(d.maxHp ?? 6);
-      hud.setHp(d.hp ?? d.maxHp ?? 6);
-      for (let i = 0; i < (d.items?.length ?? 0); i++) if (d.items[i]) hud.setItem(i, d.items[i]);
-      (d.flags ?? []).forEach(f => setFlag(f));
-      loadScene(d.scene ?? 'overworld',
-        d.px !== undefined ? Math.floor(d.px / TILE_SIZE) : undefined,
-        d.py !== undefined ? Math.floor(d.py / TILE_SIZE) : undefined);
-      hud.setHp(d.hp ?? hud.maxHp);
-      return true;
-    } catch(e) { return false; }
-  },
-};
-
-window.addEventListener('keydown', e => {
-  if (e.code === 'KeyF' && e.key === 'F5') { e.preventDefault(); if (saveLoad.save()) showNote('SAVED!'); }
-  if (e.code === 'KeyF' && e.key === 'F9') { e.preventDefault(); if (saveLoad.load()) showNote('LOADED!'); }
 });
 
 // ================================================================
-// MINIMAP TOGGLE
+// HUD SETUP
+// ================================================================
+hud.setMaxHp(6);
+hud.setHp(6);
+hud.setCoins(0);
+
+// ================================================================
+// PLAYER ENTITY
+// ================================================================
+playerId = world.createEntity({
+  persistent: true,
+  player:     true,
+  transform:  { x: 15 * TILE_SIZE, y: 15 * TILE_SIZE },
+  velocity:   { dx: 0, dy: 0, speed: 60 },
+  animator:   createAnimator(CLIPS_PLAYER, 'idle'),
+  collider:   true,
+  damageable: {
+    hp: 6, maxHp: 6,
+    iframes: 0, iframeMax: 1.5,
+    team: 'player',
+    onHit(vid, aid, amount) {
+      // Shield passive: reduce damage by 1 if equipped
+      const realDmg = getFlag('hasShield') ? Math.max(1, amount - 1) : amount;
+      const dmg = world.get(vid, 'damageable');
+      // Re-apply correct damage (sysDamage already applied full amount)
+      if (getFlag('hasShield') && realDmg < amount) {
+        dmg.hp = Math.min(dmg.maxHp, dmg.hp + (amount - realDmg));
+      }
+      hud.setHp(Math.max(0, dmg.hp));
+      sound.playSFX('hurt');
+      const tf = world.get(vid, 'transform');
+      if (tf) emitBurst(tf.x + 4, tf.y + 4, 'hit');
+      if (dmg.hp <= 0) showNote('DEFEATED! F9 TO RELOAD', 5.0);
+    },
+    onDeath() { /* handled in onHit */ },
+  },
+});
+
+registerAllItemUseHandlers();
+
+// ================================================================
+// OVERRIDE sysInput TO TRACK PLAYER FACING
+// ================================================================
+const _origSysInput = sysInput;
+// Wrap after init by hooking into the movement update via a separate tracker
+function sysTrackFacing() {
+  const vel = world.get(playerId, 'velocity');
+  if (!vel) return;
+  if (vel.dx !== 0 || vel.dy !== 0) {
+    // Normalise and store dominant axis
+    if (Math.abs(vel.dx) >= Math.abs(vel.dy)) {
+      playerFacing.dx = vel.dx > 0 ? 1 : -1;
+      playerFacing.dy = 0;
+    } else {
+      playerFacing.dx = 0;
+      playerFacing.dy = vel.dy > 0 ? 1 : -1;
+    }
+  }
+}
+
+// ================================================================
+// MINIMAP TOGGLE (M key)
 // ================================================================
 let minimapVisible = true;
 window.addEventListener('keydown', e => {
@@ -2230,36 +1561,37 @@ function loop(ts) {
 
   // Engine subsystems
   engineTick(delta);
+  updateTransition(delta);
 
-  // Game logic
+  // Logic
   input.update();
   sysInput();
   sysTrackFacing();
   sysPlayerAttack(delta);
-  sysPlayerAnim(delta);
   sysAI(delta);
-  sysEnemyAI(delta);        // includes aggroGroup propagation
-  sysBoss(delta);            // ← three-phase boss logic
-  sysB3Spawner(delta);       // ← skeleton spawner on B3
+  sysEnemyAI(delta);
   sysMovement(delta);
+  sysSpatialHash();
   sysCamera();
   sysSceneTransition();
+  sysAnimation(delta);
+  sysDialog(elapsed);
   sysDamage(delta);
   sysProjectile(delta);
+  sysSwing(delta);
   sysPickups();
   sysPickupFlags();
   sysChestLoot(delta);
-  sysDialog(elapsed);
-  sysFootsteps();
+  sysFootsteps(delta);
+  sysPortalSparkles(delta);
 
   // Render
-  clearBuffer(_scenes?.[worldState.currentScene]?.bgColor ?? 0);
+  clearBuffer(_scenes[worldState.currentScene]?.bgColor ?? 0);
   drawTilemap(worldState.layerBG,      elapsed);
   drawTilemap(worldState.layerObjects, elapsed);
   sysRender();
   renderParticles();
   renderHUD();
-  renderBossBar();    // ← boss HP bar
   if (minimapVisible) {
     renderMinimap({
       corner:     'bottomRight',
@@ -2268,21 +1600,23 @@ function loop(ts) {
       showCamera: true,
     });
   }
+  renderDialog(elapsed);
   renderSaveNote();
   flushBuffer();
+  renderTransitionOverlay();
 
-  // Debug
+  // Debug overlay
   const ptf = world.get(playerId, 'transform');
   document.getElementById('debug').textContent =
     `FPS: ${fps}  SCENE: ${worldState.currentScene}\n` +
     `PLAYER: ${ptf?.x|0},${ptf?.y|0}  FACING: ${playerFacing.dx},${playerFacing.dy}\n` +
     `CAM: ${camera.x},${camera.y}  WORLD: ${worldState.w}x${worldState.h}px\n` +
-    `FLAGS: cave=${+getFlag('enteredCave')} key=${+getFlag('hasKey')} boss=${+getFlag('boss_dead')} shield=${+getFlag('hasShield')}\n` +
+    `FLAGS: met=${+getFlag('metVillager')} cave=${+getFlag('enteredCave')} ` +
+    `key=${+getFlag('hasKey')} crystal=${+getFlag('foundCrystal')} rew=${+getFlag('rewarded')} shield=${+getFlag('hasShield')}\n` +
     `HP: ${hud.hp}/${hud.maxHp}  COINS: ${hud.coins}  ` +
     `SLOT: ${hud.selectedSlot ?? 'none'}  ITEMS: [${hud.items.map(i=>i?i.replace('_item',''):'-').join('|')}]\n` +
     `WEAPON: ${hud.selectedSlot !== null && hud.items[hud.selectedSlot] ? hud.items[hud.selectedSlot].replace('_item','').toUpperCase() : 'BASIC SWORD'}\n` +
-    `ATTACK_CD: ${attackCooldown.toFixed(2)}  ENEMIES: ${world.query('enemy').length}` +
-    (bossActive ? `  BOSS: P${bossPhase} HP:${world.get(bossId,'damageable')?.hp ?? '?'}` : '');
+    `ATTACK_CD: ${attackCooldown.toFixed(2)}  ENEMIES: ${world.query('enemy').length}`;
 
   requestAnimationFrame(loop);
 }

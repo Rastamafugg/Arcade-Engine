@@ -23,9 +23,63 @@
 <canvas id="screen"></canvas>
 <div id="hint">WASD/ARROWS: move  |  Z/SPACE: jump  |  UP near ladder: climb  |  X: attack  |  E/Q: cycle weapon</div>
 
-<script src="pixel-canvas-engine.js"></script>
+<script type="module">
 
-<script>
+import * as Engine from './pixelGameEngine/index.js';
+
+const {
+  // Config
+  TILE_SIZE,
+  // Assets
+  buildSpriteCache, buildPaletteSwap,
+  // World / Tilemap
+  worldState, camera, registerTileAnims, drawTilemap,
+  // Renderer
+  clearBuffer, flushBuffer, fillRectPx, fillRectWorld, drawText, drawBox, blendPixel,
+  // Physics
+  spatialHash,
+  // ECS
+  world,
+  // Input
+  input,
+  // Sound
+  sound,
+  // Animation
+  createAnimator, animatorPlay, animatorUpdate, animatorSprite,
+  // Particles
+  emitBurst, updateParticles, renderParticles,
+  // Scene
+  registerScenes, loadScene, clearSceneEntities,
+  setNpcClipFactory, spawnSceneNpcs, spawnSceneChests,
+  // Flags
+  setFlag, clearFlag, getFlag, hasFlags, onFlags,
+  // Dialog
+  dialog, sysDialog, renderDialog,
+  // Cutscene
+  cutscene,
+  // Combat
+  sysSwing, sysProjectile, sysDamage,
+  // Enemy
+  sysEnemy, sysEnemyAI, spawnEnemy, spawnRangedEnemy,
+  // Spawner
+  createSpawner, sysSpawner,
+  // Chest
+  sysChestLoot,
+  // Save/Load
+  renderSaveNote, showNote,
+  // Game loop systems
+  engineTick, sysInput, sysAI, sysMovement, sysSpatialHash,
+  sysAnimation, sysCamera, sysSceneTransition, sysRender,
+  // HUD
+  hud, renderHUD,
+  // Minimap
+  renderMinimap,
+  // Transition
+  renderTransitionOverlay,
+  // Scene exports (re-exported from scene.js)
+  _scenes, sceneTransition,
+} = Engine;
+
 'use strict';
 
 // ================================================================
