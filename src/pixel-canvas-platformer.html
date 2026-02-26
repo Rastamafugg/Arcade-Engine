@@ -448,7 +448,7 @@ let facingRight = true;
 // ================================================================
 // PLAYER ENTITY
 // ================================================================
-playerId = world.createEntity({
+setPlayerId(world.createEntity({
   persistent: true,
   player:     true,
   transform:  { x: 2 * TILE_SIZE, y: 14 * TILE_SIZE },
@@ -478,7 +478,7 @@ playerId = world.createEntity({
     },
     onDeath() { /* handled in onHit */ },
   },
-});
+}));
 
 // ================================================================
 // ENEMY FACTORY
