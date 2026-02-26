@@ -4,6 +4,12 @@ import { sound } from './sound.js';
 import { world } from './ecs.js';
 import { spatialHash } from '../physics.js';
 import { playerId } from './scene.js';
+import { cutscene } from './cutscene.js';
+import { fillRectPx } from '../renderer.js';
+import { TILE_SIZE, LOGICAL_W, LOGICAL_H, CHAR_W } from '../constants.js';
+import { _openChest } from './chest.js';
+import { flags } from './flags.js';
+import { hud } from '../ui/hud.js';
 
 export const dialog = {
   active:   false,
@@ -13,6 +19,25 @@ export const dialog = {
   _onClose: null,
   _branch:  null,
 };
+
+export function _resolveNpcDialog(npc) {
+  for (const b of (npc.dialogBranches ?? [])) {
+    const reqOk = !b.requires || b.requires.every(f => flags[f]);
+    const excOk = !b.excludes || !b.excludes.some(f => flags[f]);
+    if (reqOk && excOk) return { lines: b.lines ?? npc.dialogLines, branch: b };
+  }
+  return { lines: npc.dialogLines, branch: null };
+}
+
+export function _applyDialogBranch(branch) {
+  if (!branch) return;
+  if (branch.setFlags)   branch.setFlags.forEach(f => setFlag(f));
+  if (branch.clearFlags) branch.clearFlags.forEach(f => clearFlag(f));
+  if (branch.addCoins)   hud.addCoins(branch.addCoins);
+  if (branch.addHp)      hud.addHp(branch.addHp);
+  if (branch.emit)       emitBurst(branch.emit.x, branch.emit.y, branch.emit.preset);
+  if (branch.runScript)  cutscene.run(branch.runScript);
+}
 
 export function renderDialog(elapsed) {
   if (!dialog.active) return;

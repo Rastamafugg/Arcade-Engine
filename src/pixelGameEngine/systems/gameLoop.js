@@ -20,25 +20,6 @@ import { hud } from '../ui/hud.js';
 // SECTION 19: BUILT-IN SYSTEMS
 // ================================================================
 
-function _resolveNpcDialog(npc) {
-  for (const b of (npc.dialogBranches ?? [])) {
-    const reqOk = !b.requires || b.requires.every(f => flags[f]);
-    const excOk = !b.excludes || !b.excludes.some(f => flags[f]);
-    if (reqOk && excOk) return { lines: b.lines ?? npc.dialogLines, branch: b };
-  }
-  return { lines: npc.dialogLines, branch: null };
-}
-
-function _applyDialogBranch(branch) {
-  if (!branch) return;
-  if (branch.setFlags)   branch.setFlags.forEach(f => setFlag(f));
-  if (branch.clearFlags) branch.clearFlags.forEach(f => clearFlag(f));
-  if (branch.addCoins)   hud.addCoins(branch.addCoins);
-  if (branch.addHp)      hud.addHp(branch.addHp);
-  if (branch.emit)       emitBurst(branch.emit.x, branch.emit.y, branch.emit.preset);
-  if (branch.runScript)  cutscene.run(branch.runScript);
-}
-
 export function sysInput() {
   if (dialog.active || sceneTransition.state !== 'none' || cutscene.isInputLocked()) {
     const vel = world.get(playerId, 'velocity');
