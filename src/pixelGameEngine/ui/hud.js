@@ -1,7 +1,7 @@
 import { sound } from '../systems/sound.js';
 import { fillRectPx, blitBuffer, drawText } from '../renderer.js';
 import { HUD_H, LOGICAL_W } from '../config.js';
-import { spriteCache, _rasterizeSprite } from '../systems/spriteCache.js';
+import { getSpriteCache, _rasterizeSprite } from '../systems/spriteCache.js';
 
 const _HUD_DEFS = {
   _hud_heart_full: [
@@ -78,7 +78,7 @@ const _HUD_DEFS = {
 };
 
 for (const [name, data] of Object.entries(_HUD_DEFS)) {
-  spriteCache[name] = _rasterizeSprite(data);
+  getSpriteCache()[name] = _rasterizeSprite(data);
 }
 
 export const hud = {
@@ -146,12 +146,12 @@ export function renderHUD() {
     const key = filled >= 2 ? '_hud_heart_full'
               : filled === 1 ? '_hud_heart_half'
               : '_hud_heart_empty';
-    blitBuffer(spriteCache[key], 2 + i * 9, 1);
+    blitBuffer(getSpriteCache()[key], 2 + i * 9, 1);
   }
 
   // Coin icon + count.
   const coinX = 2 + heartCount * 9 + 4;
-  blitBuffer(spriteCache['_hud_coin'], coinX, 1);
+  blitBuffer(getSpriteCache()['_hud_coin'], coinX, 1);
   drawText(`x${hud.coins}`, coinX + 9, 2, 7);
 
   // Item slots (right side). Selected slot gets a highlight border.
@@ -163,9 +163,9 @@ export function renderHUD() {
       fillRectPx(sx - 1, 0,        1, HUD_H, 7); // left
       fillRectPx(sx + 8, 0,        1, HUD_H, 7); // right
     }
-    blitBuffer(spriteCache['_hud_slot_empty'], sx, 1);
+    blitBuffer(getSpriteCache()['_hud_slot_empty'], sx, 1);
     if (hud.items[s]) {
-      const buf = spriteCache[hud.items[s]];
+      const buf = getSpriteCache()[hud.items[s]];
       if (buf) blitBuffer(buf, sx, 1);
     }
   }

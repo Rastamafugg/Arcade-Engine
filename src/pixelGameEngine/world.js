@@ -1,6 +1,6 @@
 import { TILE_SIZE, LOGICAL_W, LOGICAL_H, WORLD_H, WORLD_OFFSET_Y } from './config.js';
 import { blitWorld } from './renderer.js';
-import { spriteCache } from './systems/spriteCache.js';
+import { getSpriteCache } from './systems/spriteCache.js';
 
 export const camera = {
   x: 0, y: 0,
@@ -43,7 +43,7 @@ export function drawTilemap(layer, elapsed = 0) {
     for (let col = cStart; col < cEnd; col++) {
       const cell = layer[row]?.[col];
       if (!cell) continue;
-      const buf = spriteCache[resolveSprite(cell, elapsed)];
+      const buf = getSpriteCache()[resolveSprite(cell, elapsed)];
       if (!buf) continue;
       const [sx, sy] = camera.toScreen(col * TILE_SIZE, row * TILE_SIZE);
       blitWorld(buf, sx, sy);

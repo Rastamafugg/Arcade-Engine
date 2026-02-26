@@ -1,7 +1,7 @@
 import { loadScene } from './scene.js';
 import { worldState } from '../world.js';
 import { world } from './ecs.js';
-import { flags } from './flags.js';
+import { getFlags } from './flags.js';
 import { hud } from '../ui/hud.js';
 import { sound } from './sound.js';
 import { textWidth, fillRectPx, drawText } from '../renderer.js';
@@ -42,7 +42,7 @@ export const saveLoad = {
         version: 2,
         scene:   worldState.currentScene,
         x: ptf.x | 0, y: ptf.y | 0,
-        flags:   { ...flags },
+        flags:   { ...getFlags() },
         hud:     { hp: hud.hp, maxHp: hud.maxHp, coins: hud.coins },
       }));
       return true;
@@ -54,7 +54,7 @@ export const saveLoad = {
       if (!raw) return false;
       const data = JSON.parse(raw);
       if (data.version !== 2 || !getScenes[data.scene]) return false;
-      if (data.flags) Object.assign(flags, data.flags);
+      if (data.flags) Object.assign(getFlags(), data.flags);
       if (data.hud) {
         hud.hp     = data.hud.hp    ?? hud.hp;
         hud.maxHp  = data.hud.maxHp ?? hud.maxHp;

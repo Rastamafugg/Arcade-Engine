@@ -2,9 +2,11 @@ import { hud } from '../ui/hud.js';
 import { emitBurst } from './particles.js';
 import { cutscene } from './cutscene.js';
 
-export const flags = {};
+const flags = {};
 const _watchers = [];
 
+export function getFlags()   { return flags; }
+export function getFlag(name)   { return !!flags[name]; }
 export function setFlag(name, val = true) {
   const prev = flags[name];
   flags[name] = !!val;
@@ -12,7 +14,6 @@ export function setFlag(name, val = true) {
 }
 
 export function clearFlag(name) { flags[name] = false; }
-export function getFlag(name)   { return !!flags[name]; }
 export function hasFlags(...names) { return names.every(n => !!flags[n]); }
 
 export function onFlags(flagNames, fn, { once = true } = {}) {

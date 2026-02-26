@@ -7,7 +7,8 @@ import { paletteRGBA } from '../config.js';
 // index-resolver function so both rasterization paths (direct and
 // palette-swap) share a single loop.
 // ================================================================
-export const spriteCache = {};
+const spriteCache = {};
+export function getSpriteCache() { return spriteCache; }
 
 export function buildSpriteCache(sprites) {
   for (const [name, data] of Object.entries(sprites)) {

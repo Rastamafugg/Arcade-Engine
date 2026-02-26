@@ -8,7 +8,7 @@ import { cutscene } from './cutscene.js';
 import { fillRectPx } from '../renderer.js';
 import { TILE_SIZE, LOGICAL_W, LOGICAL_H } from '../config.js';
 import { _openChest } from './chest.js';
-import { flags } from './flags.js';
+import { getFlags } from './flags.js';
 import { hud } from '../ui/hud.js';
 import { CHAR_W } from '../assets.js';
 
@@ -23,8 +23,8 @@ export const dialog = {
 
 export function _resolveNpcDialog(npc) {
   for (const b of (npc.dialogBranches ?? [])) {
-    const reqOk = !b.requires || b.requires.every(f => flags[f]);
-    const excOk = !b.excludes || !b.excludes.some(f => flags[f]);
+    const reqOk = !b.requires || b.requires.every(f => getFlags()[f]);
+    const excOk = !b.excludes || !b.excludes.some(f => getFlags()[f]);
     if (reqOk && excOk) return { lines: b.lines ?? npc.dialogLines, branch: b };
   }
   return { lines: npc.dialogLines, branch: null };

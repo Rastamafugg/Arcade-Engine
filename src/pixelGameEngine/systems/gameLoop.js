@@ -1,5 +1,5 @@
 import { _applyWalkAnim, animatorPlay, animatorUpdate, animatorSprite } from './animation.js';
-import { spriteCache } from './spriteCache.js';
+import { getSpriteCache } from './spriteCache.js';
 import { TILE_SIZE } from '../config.js';
 import { cutscene } from './cutscene.js';
 import { dialog } from './dialog.js';
@@ -112,7 +112,7 @@ export function sysSceneTransition() {
   if (!ptf) return;
   const tx = ptf.x / TILE_SIZE | 0;
   const ty = ptf.y / TILE_SIZE | 0;
-  const portals = getScenes[worldState.currentScene]?.portals ?? [];
+  const portals = getScenes()[worldState.currentScene]?.portals ?? [];
   for (const p of portals) {
     if (tx === p.tileX && ty === p.tileY) {
       if (p.script) { cutscene.run(p.script); return; }
@@ -131,11 +131,11 @@ export function sysRender() {
     let buf = null, flipX = false, flipY = false;
     if (anim) {
       const sn = animatorSprite(anim);
-      buf = sn ? spriteCache[sn] : null;
+      buf = sn ? getSpriteCache()[sn] : null;
       flipX = anim.flipX; flipY = anim.flipY;
     } else {
       const sp = world.get(id, 'sprite');
-      if (sp) { buf = sp.buf || spriteCache[sp.name]; flipX = !!sp.flipX; }
+      if (sp) { buf = sp.buf || getSpriteCache()[sp.name]; flipX = !!sp.flipX; }
     }
     if (!buf) continue;
     // Iframe flicker: hide damageable entity every other flicker tick.
