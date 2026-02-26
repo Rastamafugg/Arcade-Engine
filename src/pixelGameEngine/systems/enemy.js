@@ -1,7 +1,7 @@
 import { world } from '../systems/ecs.js';
 import { TILE_SIZE } from '../config.js';
 import { createAnimator } from './animation.js';
-import { hasLineOfSight } from '../systems/scene.js';
+import { hasLineOfSight } from '../physics.js';
 import { emitBurst } from './particles.js';
 
 // ================================================================

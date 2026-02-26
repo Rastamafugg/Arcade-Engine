@@ -1,7 +1,8 @@
 import { world } from '../systems/ecs.js';
 import { emitBurst } from '../systems/particles.js';
 import { sound } from '../systems/sound.js';
-import { setFlag, showNote } from '../systems/gameLogic.js';
+import { setFlag } from '../systems/flags.js';
+import { showNote } from '../systems/saveLoad.js';
 
 // ================================================================
 // SECTION 24: CHEST SYSTEM

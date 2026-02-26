@@ -32,8 +32,8 @@ import { HBX, HBY, HBW, HBH } from '../physics.js';
 //   IFRAME_FLICKER_INTERVAL, _iframeFlickerTimer, _iframeFlickerVisible
 // ================================================================
 
-const IFRAME_FLICKER_INTERVAL = 0.08;
-let _iframeFlickerTimer   = 0;
+export const IFRAME_FLICKER_INTERVAL = 0.08;
+export let _iframeFlickerTimer   = 0;
 export let _iframeFlickerVisible = true;
 
 export function sysDamage(delta) {

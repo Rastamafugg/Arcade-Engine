@@ -2,10 +2,15 @@ import { world } from './ecs.js';
 import { createAnimator } from './animation.js';
 import { getFlag } from './flags.js';
 import { sound } from './sound.js';
+import { worldState } from '../world.js';
+import { _spawnChestEntity } from './chest.js';
+import { spawnSceneEnemies } from './spawner.js';
+import { TILE_SIZE } from '../config.js';
+import { camera } from '../world.js';
 
 export let playerId = -1;
 const sceneNpcIds = [];
-let _scenes = {};
+export let _scenes = {};
 
 // Default NPC clip factory. Override with setNpcClipFactory().
 let _npcClipFactory = s => {
@@ -18,7 +23,7 @@ let _npcClipFactory = s => {
   };
 };
 
-const sceneTransition = {
+export const sceneTransition = {
   state: 'none',
   alpha: 0, speed: 3,
   pendingScene: '', pendingX: 0, pendingY: 0,

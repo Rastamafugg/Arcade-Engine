@@ -1,6 +1,7 @@
 import { sound } from '../systems/sound.js';
-import { fillRectPx, blitBuffer, drawText, spriteCache } from '../renderer.js';
+import { fillRectPx, blitBuffer, drawText } from '../renderer.js';
 import { HUD_H, LOGICAL_W } from '../config.js';
+import { spriteCache, _rasterizeSprite } from '../systems/spriteCache.js';
 
 const _HUD_DEFS = {
   _hud_heart_full: [
@@ -80,7 +81,7 @@ for (const [name, data] of Object.entries(_HUD_DEFS)) {
   spriteCache[name] = _rasterizeSprite(data);
 }
 
-const hud = {
+export const hud = {
   hp:           6,
   maxHp:        6,
   coins:        0,

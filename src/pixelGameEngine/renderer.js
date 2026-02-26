@@ -39,8 +39,6 @@ export function blitBuffer(buf, sx, sy, flipX = false, flipY = false, clipToWorl
   }
 }
 
-export function flushBuffer() { ctx.putImageData(frameImageData, 0, 0); }
-
 export function fitToWindow() {
   const scale = Math.min(window.innerWidth / LOGICAL_W, window.innerHeight / LOGICAL_H);
   canvas.style.width  = Math.round(LOGICAL_W * scale) + 'px';

@@ -1,5 +1,6 @@
-import { TILE_SIZE, LOGICAL_W, WORLD_H, WORLD_OFFSET_Y } from './config.js';
-import { blitWorld, spriteCache } from './renderer.js';
+import { TILE_SIZE, LOGICAL_W, LOGICAL_H, WORLD_H, WORLD_OFFSET_Y } from './config.js';
+import { blitWorld } from './renderer.js';
+import { spriteCache } from './systems/spriteCache.js';
 
 export const camera = {
   x: 0, y: 0,

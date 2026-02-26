@@ -4,7 +4,7 @@
 let _saveKey = 'pixelCanvas_v5';
 export function setSaveKey(k) { _saveKey = k; }
 
-const saveNote = { text: '', timer: 0 };
+export const saveNote = { text: '', timer: 0 };
 export function showNote(msg, dur = 2.5) { saveNote.text = msg; saveNote.timer = dur; }
 
 export function renderSaveNote() {

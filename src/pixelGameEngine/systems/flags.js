@@ -2,7 +2,7 @@ import { hud } from '../ui/hud.js';
 import { emitBurst } from './particles.js';
 import { cutscene } from './cutscene.js';
 
-const flags = {};
+export const flags = {};
 const _watchers = [];
 
 export function setFlag(name, val = true) {

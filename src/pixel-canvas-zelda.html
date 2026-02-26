@@ -55,8 +55,8 @@ const {
   // Particles
   emitBurst, updateParticles, renderParticles,
   // Scene
-  registerScenes, loadScene, clearSceneEntities,
-  setNpcClipFactory, spawnSceneNpcs, spawnSceneChests,
+  playerId, registerScenes, loadScene, clearSceneEntities,
+  setNpcClipFactory, spawnSceneNpcs, spawnSceneChests, updateTransition,
   // Flags
   setFlag, clearFlag, getFlag, hasFlags, onFlags,
   // Dialog
@@ -66,13 +66,13 @@ const {
   // Combat
   sysSwing, sysProjectile, sysDamage,
   // Enemy
-  sysEnemy, sysEnemyAI, spawnEnemy, spawnRangedEnemy,
+  sysEnemy, spawnRangedEnemy,
   // Spawner
   createSpawner, sysSpawner,
   // Chest
   sysChestLoot,
   // Save/Load
-  renderSaveNote, showNote,
+  renderSaveNote, showNote, setSaveKey, saveLoad,
   // Game loop systems
   engineTick, sysInput, sysAI, sysMovement, sysSpatialHash,
   sysAnimation, sysCamera, sysSceneTransition, sysRender,
@@ -1485,7 +1485,7 @@ hud.setCoins(0);
 // ================================================================
 // PLAYER ENTITY
 // ================================================================
-playerId = world.createEntity({
+let pid = world.createEntity({
   persistent: true,
   player:     true,
   transform:  { x: 15 * TILE_SIZE, y: 15 * TILE_SIZE },

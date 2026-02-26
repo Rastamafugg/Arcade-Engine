@@ -38,6 +38,7 @@ export { sound } from './systems/sound.js';
 export * from './systems/animation.js';
 export * from './systems/particles.js';
 export * from './systems/scene.js';
+export * from './systems/spriteCache.js';
 export * from './systems/dialog.js';
 export * from './systems/flags.js';
 export * from './systems/cutscene.js';
