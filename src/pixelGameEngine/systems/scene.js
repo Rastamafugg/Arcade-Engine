@@ -8,7 +8,7 @@ import { spawnSceneEnemies } from './spawner.js';
 import { TILE_SIZE } from '../config.js';
 import { camera } from '../world.js';
 
-export let playerId = -1;
+let playerId = -1;
 const sceneNpcIds = [];
 export let _scenes = {};
 
@@ -120,3 +120,6 @@ export function renderTransitionOverlay() {
   ctx.fillStyle = `rgba(0,0,0,${sceneTransition.alpha.toFixed(2)})`;
   ctx.fillRect(0, 0, LOGICAL_W, LOGICAL_H);
 }
+
+export function getPlayerId() { return playerId; }
+export function setPlayerId(id) { playerId = id; }

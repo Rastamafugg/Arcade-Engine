@@ -10,7 +10,7 @@ import { updateParticles } from './particles.js';
 import { _clampToWorld, resolveMove, spatialHash } from '../physics.js';
 import { blitWorld } from '../renderer.js';
 import { saveNote } from './saveLoad.js';
-import { playerId, sceneTransition, _scenes } from './scene.js';
+import { getPlayerId, sceneTransition, _scenes } from './scene.js';
 import { camera } from '../world.js';
 import { hud } from '../ui/hud.js';
 
@@ -20,7 +20,7 @@ import { hud } from '../ui/hud.js';
 
 export function sysInput() {
   if (dialog.active || sceneTransition.state !== 'none' || cutscene.isInputLocked()) {
-    const vel = world.get(playerId, 'velocity');
+    const vel = world.get(getPlayerId(), 'velocity');
     if (vel) { vel.dx = 0; vel.dy = 0; }
     return;
   }
@@ -29,8 +29,8 @@ export function sysInput() {
   if (input.pressed('itemNext')) hud.cycleSlot(1);
   if (input.pressed('itemPrev')) hud.cycleSlot(-1);
 
-  const vel  = world.get(playerId, 'velocity');
-  const anim = world.get(playerId, 'animator');
+  const vel  = world.get(getPlayerId(), 'velocity');
+  const anim = world.get(getPlayerId(), 'animator');
   if (!vel || !anim) return;
 
   let dx = 0, dy = 0;
@@ -96,7 +96,7 @@ export function sysSpatialHash() {
 }
 
 export function sysCamera() {
-  const ptf = world.get(playerId, 'transform');
+  const ptf = world.get(getPlayerId(), 'transform');
   if (ptf) camera.follow(ptf.x + TILE_SIZE/2, ptf.y + TILE_SIZE/2, worldState.w, worldState.h);
 }
 
@@ -108,7 +108,7 @@ export function sysAnimation(delta) {
 
 export function sysSceneTransition() {
   if (sceneTransition.state !== 'none' || dialog.active || cutscene.isInputLocked()) return;
-  const ptf = world.get(playerId, 'transform');
+  const ptf = world.get(getPlayerId(), 'transform');
   if (!ptf) return;
   const tx = ptf.x / TILE_SIZE | 0;
   const ty = ptf.y / TILE_SIZE | 0;

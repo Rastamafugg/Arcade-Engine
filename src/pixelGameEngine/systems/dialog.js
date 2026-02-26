@@ -3,7 +3,7 @@ import { input } from './input.js';
 import { sound } from './sound.js';
 import { world } from './ecs.js';
 import { spatialHash } from '../physics.js';
-import { playerId } from './scene.js';
+import { getPlayerId } from './scene.js';
 import { cutscene } from './cutscene.js';
 import { fillRectPx } from '../renderer.js';
 import { TILE_SIZE, LOGICAL_W, LOGICAL_H } from '../config.js';
@@ -79,7 +79,7 @@ export function sysDialog(elapsed) {
 
   // Use action key: first check chests, then NPCs, then selected item use.
   if (!input.pressed('action')) return;
-  const ptf = world.get(playerId, 'transform');
+  const ptf = world.get(getPlayerId(), 'transform');
   if (!ptf) return;
 
   const nearby = spatialHash.queryRect(ptf.x - 12, ptf.y - 12, TILE_SIZE + 24, TILE_SIZE + 24);
@@ -88,7 +88,7 @@ export function sysDialog(elapsed) {
   // candidate while scanning so we never iterate the Set twice.
   let npcCandidate = null;
   for (const id of nearby) {
-    if (id === playerId) continue;
+    if (id === getPlayerId()) continue;
     const chest = world.get(id, 'chest');
     if (chest && !chest.opened) { _openChest(id); return; }
     if (!npcCandidate) {

@@ -1,6 +1,6 @@
 import { camera, worldState }  from '../world.js';
 import { world }               from '../systems/ecs.js';
-import { playerId }            from '../systems/scene.js';
+import { getPlayerId }            from '../systems/scene.js';
 import { paletteRGBA } from '../config.js';
 import { _fbSetPixel, fillRectPx } from '../renderer.js';
 import { LOGICAL_H, LOGICAL_W, TILE_SIZE, WORLD_OFFSET_Y, WORLD_H } from '../config.js';
@@ -135,7 +135,7 @@ export function renderMinimap(config = {}) {
   }
 
   // Player dot.
-  const ptf = world.get(playerId, 'transform');
+  const ptf = world.get(getPlayerId(), 'transform');
   if (ptf) {
     const [pr, pg, pb] = paletteRGBA[playerPal];
     const dotX = mx + 1 + Math.round(ptf.x / TILE_SIZE * tp);

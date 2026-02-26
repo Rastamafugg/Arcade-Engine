@@ -55,7 +55,7 @@ const {
   // Particles
   emitBurst, updateParticles, renderParticles,
   // Scene
-  playerId, registerScenes, loadScene, clearSceneEntities,
+  getPlayerId, setPlayerId, registerScenes, loadScene, clearSceneEntities,
   setNpcClipFactory, spawnSceneNpcs, spawnSceneChests, updateTransition,
   // Flags
   setFlag, clearFlag, getFlag, hasFlags, onFlags,
@@ -581,7 +581,7 @@ function spawnPickupFlagged(wx, wy, type, flagName) {
 }
 
 function sysPickups() {
-  const ptf = world.get(playerId, 'transform');
+  const ptf = world.get(getPlayerId(), 'transform');
   if (!ptf) return;
   for (const id of world.query('pickup', 'transform')) {
     const p  = world.get(id, 'pickup');
@@ -671,7 +671,7 @@ function sysPlayerAttack(delta) {
   if (attackCooldown > 0) { attackCooldown = Math.max(0, attackCooldown - delta); return; }
   if (!input.pressed('attack')) return;
 
-  const ptf = world.get(playerId, 'transform');
+  const ptf = world.get(getPlayerId(), 'transform');
   if (!ptf) return;
 
   // Resolve active weapon: selected item slot or default sword
@@ -688,7 +688,7 @@ function sysPlayerAttack(delta) {
   const weapon = ZELDA_WEAPONS[weaponKey];
   if (!weapon) return;
 
-  spawnAttack(playerId, weapon, ptf.x, ptf.y, playerFacing.dx, playerFacing.dy);
+  spawnAttack(getPlayerId(), weapon, ptf.x, ptf.y, playerFacing.dx, playerFacing.dy);
   attackCooldown = weapon.cooldownMax;
   sound.playSFX(weapon.sfx);
   showNote(weapon.name + '!', 0.6);
@@ -770,7 +770,7 @@ function spawnEnemy(type, tileX, tileY) {
 }
 
 function sysEnemyAI(delta) {
-  const ptf = world.get(playerId, 'transform');
+  const ptf = world.get(getPlayerId(), 'transform');
   if (!ptf) return;
 
   for (const id of world.query('enemy', 'transform', 'velocity')) {
@@ -827,8 +827,8 @@ function sysEnemyAI(delta) {
 // ================================================================
 let _footTimer = 0;
 function sysFootsteps(delta) {
-  const vel = world.get(playerId, 'velocity');
-  const tf  = world.get(playerId, 'transform');
+  const vel = world.get(getPlayerId(), 'velocity');
+  const tf  = world.get(getPlayerId(), 'transform');
   if (!vel || !tf) return;
   if (vel.dx === 0 && vel.dy === 0) { _footTimer = 0; return; }
   _footTimer += delta;
@@ -861,7 +861,7 @@ function registerAllItemUseHandlers() {
     return false;
   });
   hud.registerItemUse('bomb_item', (slot) => {
-    const ptf = world.get(playerId, 'transform');
+    const ptf = world.get(getPlayerId(), 'transform');
     if (!ptf) return;
     sound.playSFX('bomb');
     emitBurst(ptf.x + 4, ptf.y + 4, 'hit');
@@ -875,7 +875,7 @@ function registerAllItemUseHandlers() {
     if (hud.hp >= hud.maxHp) { showNote('ALREADY AT FULL HP'); return false; }
     hud.addHp(4);
     sound.playSFX('potion');
-    const ptf = world.get(playerId, 'transform');
+    const ptf = world.get(getPlayerId(), 'transform');
     if (ptf) emitBurst(ptf.x + 4, ptf.y + 4, 'sparkle');
     showNote('+4 HP!');
     hud.clearItem(slot);
@@ -1522,7 +1522,7 @@ registerAllItemUseHandlers();
 const _origSysInput = sysInput;
 // Wrap after init by hooking into the movement update via a separate tracker
 function sysTrackFacing() {
-  const vel = world.get(playerId, 'velocity');
+  const vel = world.get(getPlayerId(), 'velocity');
   if (!vel) return;
   if (vel.dx !== 0 || vel.dy !== 0) {
     // Normalise and store dominant axis
@@ -1606,7 +1606,7 @@ function loop(ts) {
   renderTransitionOverlay();
 
   // Debug overlay
-  const ptf = world.get(playerId, 'transform');
+  const ptf = world.get(getPlayerId(), 'transform');
   document.getElementById('debug').textContent =
     `FPS: ${fps}  SCENE: ${worldState.currentScene}\n` +
     `PLAYER: ${ptf?.x|0},${ptf?.y|0}  FACING: ${playerFacing.dx},${playerFacing.dy}\n` +
