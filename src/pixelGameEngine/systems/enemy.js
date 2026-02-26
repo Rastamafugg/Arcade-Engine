@@ -1,10 +1,11 @@
 import { world } from '../systems/ecs.js';
 import { TILE_SIZE } from '../config.js';
-import { createAnimator } from './animation.js';
+import { _applyWalkAnim, animatorPlay, createAnimator } from './animation.js';
 import { hasLineOfSight } from '../physics.js';
 import { emitBurst } from './particles.js';
 import { getPlayerId } from './scene.js';
 import { spawnAttack } from './combat.js';
+import { sound } from './sound.js';
 
 // ================================================================
 // SECTION 29: ENEMY AI SYSTEM
