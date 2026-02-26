@@ -48,5 +48,5 @@ export * from './systems/spawner.js';
 export * from './systems/chest.js';
 export * from './systems/saveLoad.js';
 export * from './systems/gameLoop.js';
-export { hud } from './ui/hud.js';
+export { hud, renderHUD } from './ui/hud.js';
 export { renderMinimap } from './ui/minimap.js';

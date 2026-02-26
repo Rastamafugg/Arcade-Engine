@@ -3,6 +3,7 @@ import { world }               from '../systems/ecs.js';
 import { playerId }            from '../systems/scene.js';
 import { paletteRGBA } from '../config.js';
 import { _fbSetPixel, fillRectPx } from '../renderer.js';
+import { LOGICAL_H, LOGICAL_W, TILE_SIZE, WORLD_OFFSET_Y, WORLD_H } from '../config.js';
 
 // ================================================================
 // SECTION 25: MINIMAP

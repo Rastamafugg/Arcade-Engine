@@ -1,6 +1,5 @@
 import { _applyWalkAnim, animatorPlay, animatorUpdate, animatorSprite } from './animation.js';
 import { spriteCache } from './spriteCache.js';
-import { _iframeFlickerVisible , IFRAME_FLICKER_INTERVAL } from './combat.js';
 import { TILE_SIZE } from '../config.js';
 import { cutscene } from './cutscene.js';
 import { dialog } from './dialog.js';
@@ -8,7 +7,7 @@ import { world } from './ecs.js';
 import { sysAggroTable } from './enemy.js';
 import { input } from './input.js';
 import { updateParticles } from './particles.js';
-import { spatialHash } from '../physics.js';
+import { _clampToWorld, resolveMove, spatialHash } from '../physics.js';
 import { blitWorld } from '../renderer.js';
 import { saveNote } from './saveLoad.js';
 import { playerId, sceneTransition, _scenes } from './scene.js';
@@ -151,7 +150,10 @@ export function sysRender() {
 // SECTION 26: ENGINE TICK
 // Call once per frame with delta. Advances all internal subsystems.
 // ================================================================
-let _iframeFlickerTimer = 0;
+
+const IFRAME_FLICKER_INTERVAL = 0.08;
+let _iframeFlickerTimer   = 0;
+let _iframeFlickerVisible = true;
 
 export function engineTick(delta) {
   if (saveNote.timer > 0) saveNote.timer -= delta;

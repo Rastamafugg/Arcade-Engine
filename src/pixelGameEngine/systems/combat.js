@@ -28,13 +28,6 @@ import { HBX, HBY, HBW, HBH } from '../physics.js';
 //   Grants iframes and fires callbacks on each hit.
 //   Ticks iframes down each call.
 //
-// Flicker globals (used by sysRender):
-//   IFRAME_FLICKER_INTERVAL, _iframeFlickerTimer, _iframeFlickerVisible
-// ================================================================
-
-export const IFRAME_FLICKER_INTERVAL = 0.08;
-export let _iframeFlickerTimer   = 0;
-export let _iframeFlickerVisible = true;
 
 export function sysDamage(delta) {
   const damagerIds    = world.query('damager',    'transform');
