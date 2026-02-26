@@ -81,7 +81,7 @@ const {
   // Minimap
   renderMinimap,
   // Transition
-  renderTransitionOverlay,
+  renderTransitionOverlay, startTransition,
   // Scene exports (re-exported from scene.js)
   getScenes, sceneTransition,
 } = Engine;
@@ -1390,7 +1390,7 @@ function _bossVictory(vid) {
         hud.addHp(4);
         showNote('BOSS DEFEATED! +20 COINS  +4 MAX HP');
       }},
-    { cmd: 'note',  text: 'THE CAVE DOOR IS NOW OPEN.' },
+    { cmd: 'call',  fn() { showNote('THE CAVE DOOR IS NOW OPEN.'); } },
     { cmd: 'lockInput', value: false },
   ]);
 }
@@ -1849,7 +1849,7 @@ const SCENE_DATA = {
                 ]);
               } else {
                 // Transition back to overworld as a reward
-                sceneTransition('overworld', 35 * TILE_SIZE, 8 * TILE_SIZE);
+                startTransition('overworld', 35 * TILE_SIZE, 8 * TILE_SIZE);
               }
             }},
         ],
