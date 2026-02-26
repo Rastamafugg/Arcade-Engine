@@ -1,7 +1,7 @@
 import { TILE_SIZE } from './config.js';
 import { worldState } from './world.js';
 
-let HBX = 1, HBY = 4, HBW = 6, HBH = 4;
+export let HBX = 1, HBY = 4, HBW = 6, HBH = 4;
 export function setHitbox(x, y, w, h) { HBX = x; HBY = y; HBW = w; HBH = h; }
 
 export const spatialHash = (() => {

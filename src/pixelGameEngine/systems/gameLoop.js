@@ -1,9 +1,18 @@
-import { world } from './ecs.js';
+import { _applyWalkAnim, animatorPlay, animatorUpdate, animatorSprite } from './animation.js';
+import { spriteCache } from '../assets.js';
+import { _iframeFlickerVisible, IFRAME_FLICKER_INTERVAL } from './combat.js';
+import { TILE_SIZE } from '../config.js';
+import { cutscene } from './cutscene.js';
 import { dialog } from './dialog.js';
+import { world } from './ecs.js';
+import { sysAggroTable } from './enemy.js';
+import { setFlag, clearFlag } from './flags.js';
 import { input } from './input.js';
-import { _iframeFlickerVisible } from './combat.js';
-import { _applyWalkAnim } from './animation.js';
+import { emitBurst, updateParticles } from './particles.js';
 import { spatialHash } from '../physics.js';
+import { blitWorld } from '../renderer.js';
+import { saveNote } from './saveLoad.js';
+import { playerId, sceneTransition, _scenes } from './scene.js';
 import { camera } from '../world.js';
 import { hud } from '../ui/hud.js';
 
@@ -134,65 +143,6 @@ export function sysSceneTransition() {
   }
 }
 
-export function sysDialog(elapsed) {
-  if (dialog.active) {
-    if (input.pressed('action') || input.pressed('cancel')) {
-      if (dialog.page < dialog.lines.length - 1 && input.pressed('action')) {
-        dialog.page++;
-        sound.playSFX('dialog');
-      } else {
-        const onClose = dialog._onClose;
-        const branch  = dialog._branch;
-        dialog.active   = false;
-        dialog._onClose = null;
-        dialog._branch  = null;
-        sound.playSFX('cancel');
-        if (branch)  _applyDialogBranch(branch);
-        if (onClose) onClose();
-      }
-    }
-    return;
-  }
-  if (cutscene.isRunning()) return;
-
-  // Use action key: first check chests, then NPCs, then selected item use.
-  if (!input.pressed('action')) return;
-  const ptf = world.get(playerId, 'transform');
-  if (!ptf) return;
-
-  const nearby = spatialHash.queryRect(ptf.x - 12, ptf.y - 12, TILE_SIZE + 24, TILE_SIZE + 24);
-
-  // Single pass: chest takes priority over NPC. Accumulate first NPC
-  // candidate while scanning so we never iterate the Set twice.
-  let npcCandidate = null;
-  for (const id of nearby) {
-    if (id === playerId) continue;
-    const chest = world.get(id, 'chest');
-    if (chest && !chest.opened) { _openChest(id); return; }
-    if (!npcCandidate) {
-      const npc = world.get(id, 'npcData');
-      if (npc) npcCandidate = { id, npc };
-    }
-  }
-
-  if (npcCandidate) {
-    const { id, npc } = npcCandidate;
-    const { lines, branch } = _resolveNpcDialog(npc);
-    dialog.active  = true;
-    dialog.lines   = lines;
-    dialog.name    = npc.name;
-    dialog.page    = 0;
-    dialog._branch = branch;
-    dialog._onClose = npc.onClose ? () => npc.onClose(id) : null;
-    sound.init();
-    sound.playSFX('dialog');
-    return;
-  }
-
-  // Selected item use.
-  hud.useSelectedItem();
-}
-
 // Entity render pass: world-space (clips below HUD).
 export function sysRender() {
   for (const id of world.query('transform')) {
@@ -214,5 +164,22 @@ export function sysRender() {
     if (dmgable && dmgable.iframes > 0 && !_iframeFlickerVisible) continue;
     const [sx, sy] = camera.toScreen(tf.x, tf.y);
     blitWorld(buf, sx | 0, sy | 0, flipX, flipY);
+  }
+}
+
+// ================================================================
+// SECTION 26: ENGINE TICK
+// Call once per frame with delta. Advances all internal subsystems.
+// ================================================================
+export function engineTick(delta) {
+  if (saveNote.timer > 0) saveNote.timer -= delta;
+  updateParticles(delta);
+  cutscene.update(delta);
+  sysAggroTable(delta);   // decay group alerts when no member is in combat
+  // Iframe flicker toggle.
+  _iframeFlickerTimer += delta;
+  if (_iframeFlickerTimer >= IFRAME_FLICKER_INTERVAL) {
+    _iframeFlickerTimer -= IFRAME_FLICKER_INTERVAL;
+    _iframeFlickerVisible = !_iframeFlickerVisible;
   }
 }

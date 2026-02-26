@@ -2,6 +2,7 @@ import { world } from '../systems/ecs.js';
 import { TILE_SIZE } from '../config.js';
 import { collidesAt } from '../physics.js';
 import { _fbSetPixel } from '../renderer.js';
+import { HBX, HBY, HBW, HBH } from '../physics.js';
 
 // ================================================================
 // SECTION 27: DAMAGE SYSTEM
